@@ -7,6 +7,40 @@ import { User } from '../models/User';
 
 const router: RouterType = Router();
 
+function parseLocalHour(value: unknown): number | undefined {
+    if (value === undefined || value === null || value === '') {
+        return undefined;
+    }
+
+    const parsed = Number.parseInt(String(value), 10);
+    if (Number.isNaN(parsed)) {
+        return undefined;
+    }
+
+    return Math.max(0, Math.min(23, parsed));
+}
+
+function parseProviderId(value: unknown): number | undefined {
+    if (value === undefined || value === null || value === '') {
+        return undefined;
+    }
+
+    const parsed = Number.parseInt(String(value), 10);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+        return undefined;
+    }
+
+    return parsed;
+}
+
+function parseWatchRegion(value: unknown): string {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+        return 'IN';
+    }
+
+    return value.trim().toUpperCase();
+}
+
 /**
  * GET /api/discover/vibes
  * Get list of all available vibes (predefined + user's custom if authenticated)
@@ -89,7 +123,7 @@ router.get('/genres', async (_req, res: Response) => {
  * Discover content by vibe (supports predefined vibes and custom vibes with 'custom-{id}' format)
  * Query params: vibe (required), type (movie|tv), page
  */
-router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response) => {
     try {
         const { vibe, type, page } = req.query;
 
@@ -98,16 +132,36 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
             return;
         }
 
-        // Get user's services
-        const { uid } = req.user!;
-        const user = await User.findOne({ firebaseUid: uid });
+        // Try to resolve authenticated user context, but allow guest discovery.
+        let user = null;
+        const authHeader = req.headers.authorization;
+        if (authHeader?.startsWith('Bearer ')) {
+            try {
+                const { verifyIdToken } = await import('../services/firebase.service');
+                const token = authHeader.split(' ')[1];
+                const decoded = await verifyIdToken(token);
+                if (decoded) {
+                    user = await User.findOne({ firebaseUid: decoded.uid });
+                }
+            } catch {
+                // Silent fail - continue as guest
+            }
+        }
+
         const userServices = user?.services || [];
 
         const contentType = (type as 'movie' | 'tv') || 'movie';
         const pageNum = parseInt(String(page)) || 1;
+        const providerId = parseProviderId(req.query.providerId);
+        const watchRegion = parseWatchRegion(req.query.watch_region);
 
         // Check if it's a custom vibe (format: custom-{id})
         if (vibe.startsWith('custom-')) {
+            if (!user) {
+                res.status(401).json({ error: 'Authentication required for custom vibes' });
+                return;
+            }
+
             const customVibeId = vibe.replace('custom-', '');
             const customVibe = user?.customVibes?.find(cv => cv.id === customVibeId);
 
@@ -120,7 +174,9 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
                 customVibe,
                 userServices,
                 contentType,
-                pageNum
+                pageNum,
+                providerId,
+                watchRegion
             );
 
             res.json({
@@ -129,7 +185,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
                 type: contentType,
                 page: pageNum,
                 userServices,
-                filtered: userServices.length > 0,
+                filtered: userServices.length > 0 || typeof providerId === 'number',
                 isCustom: true
             });
             return;
@@ -140,7 +196,9 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
             vibe,
             userServices,
             contentType,
-            pageNum
+            pageNum,
+            providerId,
+            watchRegion
         );
 
         if (!vibeInfo) {
@@ -157,7 +215,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
             type: contentType,
             page: pageNum,
             userServices,
-            filtered: userServices.length > 0
+            filtered: userServices.length > 0 || typeof providerId === 'number'
         });
     } catch (error) {
         console.error('Discover error:', error);
@@ -171,6 +229,8 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
  */
 router.get('/tonight', async (req: AuthRequest, res: Response) => {
     try {
+        const localHour = parseLocalHour(req.query.localHour);
+
         // Try to get user if authenticated, but don't require it
         let userServices: string[] = [];
         let watchlistTmdbIds: number[] = [];
@@ -195,21 +255,27 @@ router.get('/tonight', async (req: AuthRequest, res: Response) => {
             }
         }
 
-        const { pick, reason } = await vibeService.getTonightsPick(
+        const { pick, options, reason, slot, vibeId, vibeName, prioritizedBySubscriptions } = await vibeService.getTonightsPick(
             userServices,
-            watchlistTmdbIds
+            watchlistTmdbIds,
+            { localHour }
         );
 
         if (!pick) {
             res.json({
                 pick: null,
                 reason: 'No recommendations available',
-                suggestion: 'Try adding more streaming services'
+                suggestion: 'Try adding more streaming services',
+                options,
+                slot,
+                vibeId,
+                vibeName,
+                prioritizedBySubscriptions
             });
             return;
         }
 
-        res.json({ pick, reason });
+        res.json({ pick, options, reason, slot, vibeId, vibeName, prioritizedBySubscriptions });
     } catch (error) {
         console.error('Tonight\'s pick error:', error);
         res.status(500).json({ error: 'Failed to get tonight\'s pick' });

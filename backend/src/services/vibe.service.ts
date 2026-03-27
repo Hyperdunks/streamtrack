@@ -95,6 +95,34 @@ export const VIBE_MAP: Record<string, VibeDefinition> = {
     }
 };
 
+type TimeSlot = 'morning' | 'evening' | 'night';
+
+interface TonightPickOptions {
+    localHour?: number;
+}
+
+interface TonightPickResult {
+    pick: ContentItem | null;
+    options: ContentItem[];
+    reason: string;
+    slot: TimeSlot;
+    vibeId: string;
+    vibeName: string;
+    prioritizedBySubscriptions: boolean;
+}
+
+const SLOT_PRIMARY_VIBE: Record<TimeSlot, string> = {
+    morning: 'cozy',
+    evening: 'intense',
+    night: 'dark'
+};
+
+const SLOT_FALLBACK_VIBES: Record<TimeSlot, string[]> = {
+    morning: ['funny', 'mindless'],
+    evening: ['thoughtful', 'funny'],
+    night: ['mindless', 'thoughtful']
+};
+
 class VibeService {
     /**
      * Get all available vibes
@@ -117,7 +145,9 @@ class VibeService {
         vibeId: string,
         userServices: string[],
         type: 'movie' | 'tv' = 'movie',
-        page = 1
+        page = 1,
+        providerId?: number,
+        watchRegion = 'IN'
     ): Promise<{ results: ContentItem[]; vibe: VibeDefinition | undefined }> {
         const vibe = VIBE_MAP[vibeId];
 
@@ -127,12 +157,15 @@ class VibeService {
 
         // Convert user services to TMDB provider IDs
         const providerIds = tmdbService.getProviderTmdbIds(userServices);
+        const forcedProviderIds = typeof providerId === 'number' ? [providerId] : undefined;
 
         // Discover content with vibe filters
         const results = await tmdbService.discover(type, {
             genres: vibe.genres,
-            providers: providerIds.length > 0 ? providerIds : undefined,
+            genreMode: 'or',
+            providers: forcedProviderIds || (providerIds.length > 0 ? providerIds : undefined),
             minRating: vibe.minRating,
+            watchRegion,
             page,
             sortBy: 'popularity.desc'
         });
@@ -141,7 +174,7 @@ class VibeService {
         let filteredResults = results;
         if (vibe.excludeGenres && vibe.excludeGenres.length > 0) {
             filteredResults = results.filter(item =>
-                !item.genre_ids.some(g => vibe.excludeGenres!.includes(g))
+                !item.genre_ids?.some(g => vibe.excludeGenres!.includes(g))
             );
         }
 
@@ -161,7 +194,9 @@ class VibeService {
         customVibe: { id: string; name: string; genres: number[]; minRating?: number; color?: string },
         userServices: string[],
         type: 'movie' | 'tv' = 'movie',
-        page = 1
+        page = 1,
+        providerId?: number,
+        watchRegion = 'IN'
     ): Promise<{ results: ContentItem[]; vibe: VibeDefinition }> {
         // Convert custom vibe to VibeDefinition format
         const vibeDefinition: VibeDefinition = {
@@ -176,12 +211,15 @@ class VibeService {
 
         // Convert user services to TMDB provider IDs
         const providerIds = tmdbService.getProviderTmdbIds(userServices);
+        const forcedProviderIds = typeof providerId === 'number' ? [providerId] : undefined;
 
         // Discover content with custom vibe filters
         const results = await tmdbService.discover(type, {
             genres: customVibe.genres,
-            providers: providerIds.length > 0 ? providerIds : undefined,
+            genreMode: 'or',
+            providers: forcedProviderIds || (providerIds.length > 0 ? providerIds : undefined),
             minRating: customVibe.minRating,
+            watchRegion,
             page,
             sortBy: 'popularity.desc'
         });
@@ -194,49 +232,119 @@ class VibeService {
      */
     async getTonightsPick(
         userServices: string[],
-        watchlistTmdbIds: number[] = []
-    ): Promise<{ pick: ContentItem | null; reason: string }> {
-        const hour = new Date().getHours();
+        watchlistTmdbIds: number[] = [],
+        options: TonightPickOptions = {}
+    ): Promise<TonightPickResult> {
+        const localHour = this.normalizeHour(options.localHour);
+        const slot = this.resolveTimeSlot(localHour);
+        const primaryVibeId = SLOT_PRIMARY_VIBE[slot];
+        const vibeCandidates = [primaryVibeId, ...SLOT_FALLBACK_VIBES[slot]];
+        const prioritizedBySubscriptions = userServices.length > 0;
 
-        // Determine vibe based on time of day
-        let vibeId: string;
-        let reason: string;
+        for (const candidateVibeId of vibeCandidates) {
+            const candidates = await this.getTopRatedCandidatesByVibe(candidateVibeId, userServices);
+            const unwatched = candidates.filter(item => !watchlistTmdbIds.includes(item.tmdbId));
+            const shortlist = unwatched.length > 0 ? unwatched : candidates;
 
-        if (hour >= 22 || hour < 2) {
-            // Late night: mindless or dark
-            vibeId = Math.random() > 0.5 ? 'mindless' : 'dark';
-            reason = "Perfect for late night viewing";
-        } else if (hour >= 18 && hour < 22) {
-            // Prime time: intense or thoughtful
-            vibeId = Math.random() > 0.5 ? 'intense' : 'thoughtful';
-            reason = "Great choice for your evening";
-        } else if (hour >= 6 && hour < 12) {
-            // Morning: cozy or funny
-            vibeId = Math.random() > 0.5 ? 'cozy' : 'funny';
-            reason = "A great way to start your day";
-        } else {
-            // Afternoon: mindless or funny
-            vibeId = Math.random() > 0.5 ? 'mindless' : 'funny';
-            reason = "Perfect for an afternoon break";
+            if (shortlist.length === 0) {
+                continue;
+            }
+
+            const selectedVibe = VIBE_MAP[candidateVibeId] || VIBE_MAP[primaryVibeId];
+            const usedFallbackVibe = candidateVibeId !== primaryVibeId;
+
+            return {
+                pick: shortlist[0],
+                options: shortlist.slice(0, 8),
+                reason: this.buildTonightReason(slot, selectedVibe.name, prioritizedBySubscriptions, usedFallbackVibe),
+                slot,
+                vibeId: selectedVibe.id,
+                vibeName: selectedVibe.name,
+                prioritizedBySubscriptions
+            };
         }
 
-        const { results, vibe } = await this.discoverByVibe(vibeId, userServices, 'movie', 1);
-
-        if (results.length === 0) {
-            return { pick: null, reason: "No recommendations available" };
-        }
-
-        // Filter out items already in watchlist
-        const unwatched = results.filter(item => !watchlistTmdbIds.includes(item.tmdbId));
-
-        // Pick a random item from top 5
-        const topPicks = unwatched.length > 0 ? unwatched.slice(0, 5) : results.slice(0, 5);
-        const pick = topPicks[Math.floor(Math.random() * topPicks.length)];
-
+        const primaryVibe = VIBE_MAP[primaryVibeId];
         return {
-            pick,
-            reason: `${reason} — ${vibe?.name.toLowerCase()} vibes`
+            pick: null,
+            options: [],
+            reason: this.buildTonightReason(slot, primaryVibe.name, prioritizedBySubscriptions, false),
+            slot,
+            vibeId: primaryVibe.id,
+            vibeName: primaryVibe.name,
+            prioritizedBySubscriptions
         };
+    }
+
+    private normalizeHour(localHour?: number): number {
+        if (typeof localHour !== 'number' || !Number.isFinite(localHour)) {
+            return new Date().getHours();
+        }
+
+        const roundedHour = Math.floor(localHour);
+        if (roundedHour < 0) {
+            return 0;
+        }
+
+        if (roundedHour > 23) {
+            return 23;
+        }
+
+        return roundedHour;
+    }
+
+    private resolveTimeSlot(hour: number): TimeSlot {
+        if (hour >= 5 && hour < 12) {
+            return 'morning';
+        }
+
+        if (hour >= 17 && hour < 22) {
+            return 'evening';
+        }
+
+        return 'night';
+    }
+
+    private async getTopRatedCandidatesByVibe(
+        vibeId: string,
+        userServices: string[]
+    ): Promise<ContentItem[]> {
+        const [movieResults, tvResults] = await Promise.all([
+            this.discoverByVibe(vibeId, userServices, 'movie', 1),
+            this.discoverByVibe(vibeId, userServices, 'tv', 1)
+        ]);
+
+        const deduped = new Map<string, ContentItem>();
+        [...movieResults.results, ...tvResults.results].forEach((item) => {
+            const key = `${item.type}-${item.tmdbId}`;
+            if (!deduped.has(key)) {
+                deduped.set(key, item);
+            }
+        });
+
+        return Array.from(deduped.values()).sort((a, b) => {
+            if (b.vote_average !== a.vote_average) {
+                return b.vote_average - a.vote_average;
+            }
+
+            return (b.vote_count || 0) - (a.vote_count || 0);
+        });
+    }
+
+    private buildTonightReason(
+        slot: TimeSlot,
+        vibeName: string,
+        prioritizedBySubscriptions: boolean,
+        usedFallbackVibe: boolean
+    ): string {
+        const slotLabel = slot.charAt(0).toUpperCase() + slot.slice(1);
+        const fallbackNote = usedFallbackVibe ? ' using a close fallback vibe.' : '.';
+
+        if (prioritizedBySubscriptions) {
+            return `${slotLabel} pick: ${vibeName} mood, prioritized by top-rated titles on your subscriptions${fallbackNote}`;
+        }
+
+        return `${slotLabel} pick: ${vibeName} mood, prioritized by top-rated titles right now${fallbackNote}`;
     }
     /**
      * Get recommendations based on genres (for onboarding)

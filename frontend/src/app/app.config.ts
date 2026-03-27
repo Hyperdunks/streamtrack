@@ -27,6 +27,8 @@ import {
   Activity,
   ArrowLeft,
   Bookmark,
+  AlignJustify,
+  Trash2,
 } from 'lucide-angular';
 
 import { provideAnimations } from '@angular/platform-browser/animations';
@@ -71,6 +73,8 @@ export const appConfig: ApplicationConfig = {
         Activity,
         ArrowLeft,
         Bookmark,
+        AlignJustify,
+        Trash2,
       }),
     ),
   ],

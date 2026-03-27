@@ -31,7 +31,7 @@ import { RouterLink } from '@angular/router';
             routerLink="/home"
             class="bg-[#1d1d1f] hover:bg-black text-[#ffffff] px-8 py-3.5 rounded-full font-sans text-[15px] font-medium transition-transform active:scale-95 shadow-sm min-w-[200px]"
           >
-            Enter App
+            Get Started
           </a>
           <a
             routerLink="/signup"

@@ -16,7 +16,16 @@ import { AuthService } from '../services/auth.service';
           <div
             class="w-32 h-32 rounded-full bg-black/5 border-2 border-black/[0.08] flex items-center justify-center overflow-hidden"
           >
-            <lucide-icon name="user" class="w-16 h-16 text-black/20"></lucide-icon>
+            @if (auth.currentUser()?.photoURL) {
+              <img
+                [src]="auth.currentUser()?.photoURL"
+                [alt]="auth.currentUser()?.name || 'Profile photo'"
+                referrerpolicy="no-referrer"
+                class="h-full w-full object-cover"
+              />
+            } @else {
+              <lucide-icon name="user" class="w-16 h-16 text-black/20"></lucide-icon>
+            }
           </div>
           <div class="text-center md:text-left">
             <h1 class="text-4xl font-bold tracking-tight text-black mb-2">

@@ -5,6 +5,39 @@ import { authMiddleware, AuthRequest } from '../middleware/auth.middleware';
 
 const router: RouterType = Router();
 
+function normalizePhotoUrl(value: unknown): string {
+    if (typeof value !== 'string') {
+        return '';
+    }
+
+    return value.trim();
+}
+
+async function syncProfileFromToken(user: any, authUser: AuthRequest['user']): Promise<void> {
+    if (!user || !authUser) {
+        return;
+    }
+
+    const nameFromToken = (authUser.name || '').trim();
+    const photoFromToken = normalizePhotoUrl(authUser.picture);
+
+    let hasChanges = false;
+
+    if (nameFromToken && user.name !== nameFromToken) {
+        user.name = nameFromToken;
+        hasChanges = true;
+    }
+
+    if (photoFromToken && user.photoURL !== photoFromToken) {
+        user.photoURL = photoFromToken;
+        hasChanges = true;
+    }
+
+    if (hasChanges) {
+        await user.save();
+    }
+}
+
 /**
  * POST /api/auth/register
  * Creates or returns user document after Firebase signup
@@ -12,13 +45,14 @@ const router: RouterType = Router();
  */
 router.post('/register', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
-        const { uid, email } = req.user!;
+        const { uid, email, name: nameFromToken, picture } = req.user!;
         const { name } = req.body;
 
         // Check if user already exists
         let user = await User.findOne({ firebaseUid: uid });
 
         if (user) {
+            await syncProfileFromToken(user, req.user);
             res.json({ message: 'User already exists', user });
             return;
         }
@@ -27,7 +61,8 @@ router.post('/register', authMiddleware, async (req: AuthRequest, res: Response)
         user = new User({
             firebaseUid: uid,
             email: email || req.body.email,
-            name: name || '',
+            name: (name || nameFromToken || '').trim(),
+            photoURL: normalizePhotoUrl(picture),
             services: [],
             watchlist: []
         });
@@ -48,7 +83,7 @@ router.post('/register', authMiddleware, async (req: AuthRequest, res: Response)
  */
 router.post('/login', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
-        const { uid, email } = req.user!;
+        const { uid, email, name: nameFromToken, picture } = req.user!;
 
         let user = await User.findOne({ firebaseUid: uid });
 
@@ -57,11 +92,15 @@ router.post('/login', authMiddleware, async (req: AuthRequest, res: Response) =>
             user = new User({
                 firebaseUid: uid,
                 email: email || '',
+                name: (nameFromToken || '').trim(),
+                photoURL: normalizePhotoUrl(picture),
                 services: [],
                 watchlist: []
             });
             await user.save();
             console.log('✅ User auto-created on login:', user.email);
+        } else {
+            await syncProfileFromToken(user, req.user);
         }
 
         res.json({ message: 'Login successful', user });
@@ -84,6 +123,8 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
             res.status(404).json({ error: 'User not found' });
             return;
         }
+
+        await syncProfileFromToken(user, req.user);
 
         res.json({ user });
     } catch (error) {

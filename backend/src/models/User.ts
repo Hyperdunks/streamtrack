@@ -25,6 +25,7 @@ export interface IUser extends Document {
     firebaseUid: string;
     email: string;
     name?: string;
+    photoURL?: string;
     services: string[];
     genres: number[];
     watchlist: IWatchlistItem[];
@@ -58,6 +59,7 @@ const UserSchema = new Schema<IUser>({
     firebaseUid: { type: String, required: true, unique: true, index: true },
     email: { type: String, required: true },
     name: String,
+    photoURL: String,
     services: { type: [String], default: [] },
     genres: { type: [Number], default: [] },
     watchlist: { type: [WatchlistItemSchema], default: [] },

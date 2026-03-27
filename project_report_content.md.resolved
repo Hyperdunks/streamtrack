@@ -1,0 +1,353 @@
+# StreamTrack Project Report
+
+## Document Formatting Specification (For MS Word)
+
+- Heading line: Arial, 16 pt, Bold
+- Sub heading: Arial, 12 pt, Bold
+- Content: Arial, 11 pt
+- Content width alignment: Justified
+- Line spacing: 1.5
+
+## 1. Introduction
+
+### 1.1 Project Description
+
+StreamTrack is a streaming discovery and watchlist management web application built to solve the fragmentation of modern media consumption. Users often subscribe to multiple providers and face difficulty in finding what to watch, where to watch it, and how to track progress across platforms. StreamTrack provides a unified experience for searching content, discovering recommendations, and managing a structured watchlist.
+
+The platform integrates TMDB (The Movie Database) to fetch rich metadata for movies and TV shows. It also introduces a mood-based discovery system called vibes, which aligns recommendations with user preferences and selected streaming services. This approach reduces decision fatigue and ensures suggested titles are practically watchable within the user ecosystem.
+
+The application interface follows a content-first streaming layout with clear hierarchy, responsive behavior, and interactive sections for discovery, search, and watchlist tracking.
+
+### 1.2 Project Profile
+
+- Project Name: StreamTrack
+- Academic Year: 2025-26
+- College: SDJ International College, Vesu, Surat
+- University: Veer Narmad South Gujarat University
+- Course: BCA Semester VI
+- Domain: Entertainment and Subscription Management
+- Development Model: Agile implementation
+- Primary Tech Stack: Angular 21 (Frontend), Bun and Express (Backend), MongoDB (Database)
+- Authentication Provider: Firebase Authentication
+- External Data Source: TMDB API v3
+
+## 2. Environment Description
+
+### 2.1 Hardware and Software Requirements
+
+The development and deployment of StreamTrack require a modern computing setup for concurrent frontend and backend execution, API communication, and database operations.
+
+#### Hardware Requirements (Development)
+
+- Processor: Intel Core i5 or higher (or equivalent AMD/Apple Silicon)
+- RAM: 8 GB minimum, 16 GB recommended
+- Storage: 500 GB SSD recommended
+- Internet: Stable high-speed connection
+
+#### Hardware Requirements (Client Side)
+
+- Device: Smartphone, tablet, laptop, or desktop
+- Display support: 320 px to 4K responsive range
+
+#### Software Requirements (Development)
+
+- Operating System: Windows 10/11, macOS, or Linux
+- Runtime and Package Manager: Bun 1.1+
+- Database: MongoDB Community Server 6.0+
+- Browser: Latest Chrome, Firefox, or Safari
+- Version Control: Git
+
+### 2.2 Technologies Used
+
+#### Frontend: Angular 21
+
+The frontend uses Angular standalone architecture with signal-based reactive state handling. This improves maintainability, performance, and developer productivity in large UI flows such as onboarding, discover, and watchlist.
+
+#### Styling: Tailwind CSS v4
+
+Tailwind CSS v4 is used with CSS variables for design consistency and fast UI development. Lucide Angular icons are used for a clean and scalable icon system.
+
+#### Backend: Bun and Express
+
+The backend runs on Bun with Express 4. Route modules remain thin, while service modules handle business logic for authentication, TMDB integration, and recommendation behavior.
+
+#### Database: MongoDB and Mongoose
+
+MongoDB stores user-centric documents, and Mongoose provides schema-level validation and model-level data consistency.
+
+#### Authentication: Firebase
+
+Firebase client authentication is used on the frontend, and Firebase Admin token verification is used on the backend for protected routes.
+
+### 2.3 Project Structure and File Organization
+
+StreamTrack follows a Bun workspace monorepo structure to keep frontend and backend development coordinated.
+
+#### Root Directory
+
+- `AGENTS.md`: Operational architecture and project guidance
+- `package.json`: Workspace scripts and dependencies
+- `bun.lock`: Locked dependency graph
+- `specs/`: Implementation plan and supporting documents
+
+#### Frontend Module (`frontend/`)
+
+- `src/app/core/`: Guards, interceptors, and app-wide infrastructure
+- `src/app/services/`: API communication and client state services
+- `src/app/features/`: Route-level feature pages
+- `src/app/shared/`: Reusable UI components and helpers
+- `public/`: Static assets and provider icons
+
+#### Backend Module (`backend/`)
+
+- `src/index.ts`: API server entry point
+- `src/routes/`: Route modules for auth, user, content, discover, and watchlist
+- `src/services/`: Firebase, TMDB, vibe, and domain logic services
+- `src/models/`: Mongoose data models
+- `src/middleware/`: Shared middleware such as auth verification
+
+## 3. System Analysis and Planning
+
+### 3.1 Existing System and Drawbacks
+
+The streaming ecosystem is fragmented. Users switch between applications to discover content and maintain separate watchlists. This causes workflow friction and low discovery efficiency.
+
+#### Major Drawbacks
+
+- Choice paralysis caused by excessive options across disconnected platforms
+- Search decay where users discover titles that are unavailable on subscribed services
+- No unified watchlist across platforms
+- Limited progress states in existing systems compared to real user behavior
+
+### 3.2 Feasibility Study
+
+#### Technical Feasibility
+
+- Angular, Bun, Express, MongoDB, and Firebase are stable, well-documented technologies
+- TMDB provides reliable metadata and provider information APIs
+- Modular backend services improve maintainability and scalability
+
+#### Operational Feasibility
+
+- The interface has a familiar streaming-style interaction model
+- Workflow is simple for first-time and returning users
+- Managed services reduce operational burden for authentication and metadata sourcing
+
+#### Economic Feasibility
+
+- Core stack relies on open-source tools
+- Free/low-cost tiers from Firebase and TMDB can support academic and early deployment use
+- Bun runtime efficiency can reduce hosting costs
+
+### 3.3 Requirement Gathering and Analysis
+
+#### Functional Requirements
+
+- Centralized search for movies and TV content
+- Subscription-aware filtering and prioritization
+- Three-state watchlist management: want, watching, watched
+- Vibe-based recommendation and discovery
+- Time-aware recommendation through Tonight's Pick
+
+#### Non-Functional Requirements
+
+- Fast response time and smooth UI interaction
+- Strong route-level security and token-based access control
+- Responsive design for mobile and desktop screens
+- Maintainable codebase with modular architecture
+
+## 4. Proposed System
+
+### 4.1 Scope
+
+The project scope includes design, development, and deployment-ready implementation of a full-stack streaming discovery system.
+
+- TMDB integration for metadata and provider availability
+- Firebase-based authentication and secure protected APIs
+- Personalized recommendation through vibe logic
+- Watchlist lifecycle tracking across three states
+- Responsive Angular frontend and modular Express backend
+
+### 4.2 Project Modules
+
+#### Authentication and User Management Module
+
+- Handles registration/login synchronization and profile initialization
+- Secures user-specific data access across sessions
+
+#### Content Discovery and Search Module
+
+- Provides global search and trending content rows
+- Supports detail views for movies and TV shows
+
+#### Subscription and Preference Module
+
+- Stores active providers and preferred genres
+- Drives personalized filtering for recommendations
+
+#### Vibe and Recommendation Module
+
+- Maps mood categories to genre and rating logic
+- Powers discover flows and Tonight's Pick generation
+
+#### Watchlist Management Module
+
+- Supports add, update, remove, and statistics views
+- Maintains status transitions and duplicate prevention
+
+### 4.3 Module-wise Objectives, Functionalities, and Constraints
+
+#### Authentication Module
+
+- Objective: Secure and seamless user access
+- Functionality: Token-based protected API access with Firebase verification
+- Constraints: Requires valid Firebase Admin credentials on backend
+
+#### Content Discovery Module
+
+- Objective: Efficient and relevant content exploration
+- Functionality: Search, trending, detailed metadata, and providers
+- Constraints: Depends on TMDB API quotas and external response quality
+
+#### User Preference Module
+
+- Objective: Personalize recommendations using user choices
+- Functionality: Manage services and genres
+- Constraints: Requires persistent sync with MongoDB user document
+
+#### Discovery Module
+
+- Objective: Reduce decision fatigue with mood-based filtering
+- Functionality: Predefined and custom vibes with recommendation endpoints
+- Constraints: Availability checks increase API call volume
+
+#### Watchlist Module
+
+- Objective: Track user viewing lifecycle in one place
+- Functionality: Stateful transitions and aggregated watchlist stats
+- Constraints: Must enforce uniqueness by content ID per user
+
+## 5. Detail Planning
+
+### 5.1 UML Use Case and Activity Flow Summary
+
+#### System Architecture Overview
+
+- Client browser interacts with Angular frontend
+- Frontend communicates with Express API backend
+- Backend integrates with MongoDB, TMDB API, and Firebase Admin
+
+#### Authentication Flow
+
+- User submits credentials on frontend
+- Frontend authenticates via Firebase and receives ID token
+- Frontend sends token in Authorization header to backend
+- Backend verifies token with Firebase Admin before protected operations
+
+#### Watchlist Lifecycle Flow
+
+- User adds title to watchlist with `want` status
+- User updates status to `watching`
+- User updates status to `watched`
+- User can move content back to `want` for rewatch intent
+
+#### Use Case Actors
+
+- End User: register, login, discover, search, manage watchlist, manage profile
+- TMDB API: provides metadata and provider data
+- Firebase Auth: validates identity tokens and session authenticity
+
+### 5.2 Process Specification
+
+#### Process: Subscription-Aware Filtering
+
+- Input: User service list and TMDB provider metadata
+- Logic: Match provider IDs against user subscriptions
+- Output: Prioritize titles available on user-selected services
+
+#### Process: Tonight's Pick Heuristic
+
+- Determine local time bucket (morning/evening/night)
+- Select corresponding vibe and fetch candidate titles
+- Prioritize candidates available on user services
+- Randomly choose one high-quality candidate for hero recommendation
+
+### 5.3 Entity Relationship Summary
+
+#### Entity: User
+
+- Primary key: `firebaseUid`
+- Attributes: `email`, `name`, `services`, `genres`, `watchlist`, `customVibes`
+
+#### Entity: WatchlistItem (Embedded)
+
+- Attributes: `contentId`, `title`, `type`, `posterPath`, `status`, `rating`, `notes`, `addedAt`, `updatedAt`
+
+#### Entity: CustomVibe (Embedded)
+
+- Attributes: `id`, `name`, `genres`, `minRating`, `color`, `createdAt`
+
+## 6. System Design
+
+### 6.1 Database Design
+
+StreamTrack uses a document-centric MongoDB model focused on user-level aggregation. The watchlist and custom vibes are embedded within the user document to reduce join-like lookup complexity and improve request efficiency for profile-level operations.
+
+#### Key Schema Characteristics
+
+- `firebaseUid` is unique and indexed
+- `watchlist` is an embedded array with enum-validated status values
+- `customVibes` has a capped count per user for controlled personalization
+- `createdAt` and `updatedAt` are auto-managed timestamps
+
+### 6.2 User Interface Design
+
+The UI follows a streaming-first, responsive interaction model optimized for quick content decisions.
+
+#### Primary Screens
+
+- Landing page for product value and onboarding entry
+- Onboarding flow for services and genres selection
+- Home dashboard with hero recommendation and trending rows
+- Search page for title-based discovery
+- Content detail page for metadata and provider availability
+- Watchlist page for lifecycle tracking
+- Account page for preferences and profile controls
+
+## 7. Software Testing and Test Cases
+
+Testing includes manual validation and automated suites for frontend and backend behavior.
+
+### Test Case Table
+
+| Test ID | Description | Input | Expected Output | Actual Output | Status |
+|---------|-------------|-------|-----------------|---------------|--------|
+| TC-01 | User registration | New email/password | Account created and onboarding starts | As expected | Pass |
+| TC-02 | User login | Valid credentials | Authenticated dashboard access | As expected | Pass |
+| TC-03 | Content search | Query: Batman | Relevant movie/TV results | As expected | Pass |
+| TC-04 | Provider selection | Netflix selected | Personalized content prioritization | As expected | Pass |
+| TC-05 | Add to watchlist | Add from content card | Item appears in want state | As expected | Pass |
+| TC-06 | Update watchlist status | Change to watching | Item moves to watching group | As expected | Pass |
+| TC-07 | Vibe discovery | Select cozy vibe | Mood-aligned filtered list | As expected | Pass |
+| TC-08 | Tonight's Pick refresh | Reload home | Single recommendation generated | As expected | Pass |
+| TC-09 | Auth guard | Open protected route | Redirect to login when unauthenticated | As expected | Pass |
+| TC-10 | Mobile responsiveness | Width 375 px | Layout adapts for mobile | As expected | Pass |
+
+## 8. Future Scope of Enhancements
+
+- Social watchlists for shared planning with friends and family
+- AI-assisted recommendation and conversational discovery
+- Direct deep links to provider playback pages
+- Notification system for availability alerts and releases
+- Native clients for iOS, Android, and TV platforms
+
+## 9. References
+
+- Angular Documentation: https://angular.dev
+- TMDB API Documentation: https://developer.themoviedb.org/docs
+- Firebase Documentation: https://firebase.google.com/docs
+- MongoDB Documentation: https://www.mongodb.com/docs
+- Mongoose Documentation: https://mongoosejs.com
+- Tailwind CSS Documentation: https://tailwindcss.com
+- MDN Web Docs: https://developer.mozilla.org
+- Lucide Icons: https://lucide.dev

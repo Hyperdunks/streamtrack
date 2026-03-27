@@ -46,7 +46,7 @@ const PROVIDER_UI: Record<string, ProviderUi> = {
   imports: [CommonModule, RouterLink, LucideAngularModule, ShowCardComponent],
   template: `
     <div class="min-h-screen bg-[var(--surface-app)] text-black">
-      @if (isLoading()) {
+      @if (isLoading() && !content()) {
         <div class="flex min-h-screen items-center justify-center">
           <div class="flex flex-col items-center gap-4">
             <div class="h-9 w-9 animate-spin rounded-full border-4 border-black/20 border-t-black"></div>
@@ -88,6 +88,8 @@ const PROVIDER_UI: Record<string, ProviderUi> = {
                 <img
                   [src]="watchlistService.getImageUrl(detail.poster_path, 'original')"
                   [alt]="detail.title || detail.name"
+                  loading="eager"
+                  fetchpriority="high"
                   class="st-card aspect-[2/3] w-full border border-black/10 object-cover shadow-xl"
                 />
               </div>
@@ -153,17 +155,35 @@ const PROVIDER_UI: Record<string, ProviderUi> = {
                       <lucide-icon [name]="watchlistStatus() === 'watching' ? 'bookmark' : 'play'" class="h-4 w-4"></lucide-icon>
                       {{ watchlistStatus() === 'watching' ? 'Move to Wishlist' : 'Start Watching' }}
                     </button>
+
+                    <button
+                      (click)="removeFromWatchlist()"
+                      [disabled]="isRemovingFromWatchlist()"
+                      class="st-pill inline-flex items-center gap-2 border border-black/15 bg-white text-xs font-mono uppercase tracking-widest text-black/85 transition-colors disabled:cursor-not-allowed disabled:opacity-50 hover:bg-black/5"
+                    >
+                      @if (isRemovingFromWatchlist()) {
+                        <div class="h-4 w-4 animate-spin rounded-full border-2 border-black border-t-transparent"></div>
+                        Removing...
+                      } @else {
+                        <lucide-icon name="trash-2" class="h-4 w-4"></lucide-icon>
+                        Remove from Watchlist
+                      }
+                    </button>
                   } @else {
                     <button
                       (click)="addToWatchlist()"
-                      [disabled]="isAddingToWatchlist() || isInWatchlist()"
-                      class="st-pill inline-flex items-center gap-2 text-xs font-mono uppercase tracking-widest transition-all duration-200 disabled:cursor-not-allowed"
+                      [disabled]="isAddingToWatchlist() || isRemovingFromWatchlist() || isInWatchlist()"
+                      class="st-pill relative inline-flex items-center gap-2 overflow-hidden text-xs font-mono uppercase tracking-widest transition-all duration-200 disabled:cursor-not-allowed"
                       [ngClass]="
                         isInWatchlist()
                           ? 'bg-black text-white'
                           : 'bg-black text-white hover:bg-black/80'
                       "
                     >
+                      @if (showAddTickPulse()) {
+                        <span class="absolute inset-0 animate-ping bg-black/25"></span>
+                      }
+
                       @if (isAddingToWatchlist()) {
                         <div class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
                         Adding...
@@ -175,6 +195,13 @@ const PROVIDER_UI: Record<string, ProviderUi> = {
                         Add to Watchlist
                       }
                     </button>
+                  }
+
+                  @if (showAddTickPulse()) {
+                    <span class="inline-flex items-center gap-2 rounded-full border border-black/15 bg-white px-3 py-1.5 text-[10px] font-mono uppercase tracking-widest text-black/80">
+                      <lucide-icon name="check" class="h-3.5 w-3.5"></lucide-icon>
+                      Added to Watchlist
+                    </span>
                   }
 
                   <a
@@ -309,6 +336,8 @@ export class ContentDetailsPageComponent implements OnInit, OnDestroy {
   isLoading = signal(false);
   errorMessage = signal<string | null>(null);
   isAddingToWatchlist = signal(false);
+  isRemovingFromWatchlist = signal(false);
+  showAddTickPulse = signal(false);
   isInWatchlist = signal(false);
   watchlistStatus = signal<'want' | 'watching' | 'watched' | null>(null);
 
@@ -322,7 +351,7 @@ export class ContentDetailsPageComponent implements OnInit, OnDestroy {
   similarTotalResults = signal(0);
   similarLoading = signal(false);
 
-  castMembers = computed(() => this.content()?.castMembers || []);
+  castMembers = computed(() => (this.content()?.castMembers || []).slice(0, 5));
   heroBackdrop = computed(() => {
     const detail = this.content();
     if (!detail) return '';
@@ -366,7 +395,7 @@ export class ContentDetailsPageComponent implements OnInit, OnDestroy {
     }
 
     const detail = this.content();
-    if (!detail || this.isAddingToWatchlist() || this.isInWatchlist()) return;
+    if (!detail || this.isAddingToWatchlist() || this.isRemovingFromWatchlist() || this.isInWatchlist()) return;
 
     this.isAddingToWatchlist.set(true);
     const contentId = this.toContentId(detail);
@@ -385,16 +414,38 @@ export class ContentDetailsPageComponent implements OnInit, OnDestroy {
           this.isAddingToWatchlist.set(false);
           this.isInWatchlist.set(true);
           this.watchlistStatus.set('want');
+          this.playAddTickPulse();
         },
         error: (error) => {
           this.isAddingToWatchlist.set(false);
           if (this.isAlreadyAddedError(error)) {
             this.isInWatchlist.set(true);
+            this.playAddTickPulse();
             return;
           }
           console.error('Error adding to watchlist:', error);
         },
       });
+  }
+
+  removeFromWatchlist(): void {
+    const detail = this.content();
+    if (!detail || this.isRemovingFromWatchlist()) return;
+
+    this.isRemovingFromWatchlist.set(true);
+    const contentId = this.toContentId(detail);
+
+    this.watchlistService.removeWatchlistItem(contentId).subscribe({
+      next: () => {
+        this.isRemovingFromWatchlist.set(false);
+        this.isInWatchlist.set(false);
+        this.watchlistStatus.set(null);
+      },
+      error: (err) => {
+        this.isRemovingFromWatchlist.set(false);
+        console.error('Error removing from watchlist:', err);
+      },
+    });
   }
 
   updateWatchlistStatus(newStatus: 'want' | 'watching' | 'watched'): void {
@@ -420,6 +471,8 @@ export class ContentDetailsPageComponent implements OnInit, OnDestroy {
     this.errorMessage.set(null);
     this.isInWatchlist.set(false);
     this.watchlistStatus.set(null);
+    this.showAddTickPulse.set(false);
+    this.isRemovingFromWatchlist.set(false);
 
     try {
       const detail =
@@ -446,7 +499,11 @@ export class ContentDetailsPageComponent implements OnInit, OnDestroy {
         if (item) {
           this.isInWatchlist.set(true);
           this.watchlistStatus.set(item.status);
+          return;
         }
+
+        this.isInWatchlist.set(false);
+        this.watchlistStatus.set(null);
       });
 
       const initialSimilar = detail.similar;
@@ -460,7 +517,11 @@ export class ContentDetailsPageComponent implements OnInit, OnDestroy {
         this.setSimilarState(normalized);
         this.similarCache.set(this.similarCacheKey(type, id, normalized.page), normalized);
       } else {
-        await this.loadSimilarPage(1, true);
+        this.similarItems.set([]);
+        this.similarPage.set(1);
+        this.similarTotalPages.set(1);
+        this.similarTotalResults.set(0);
+        void this.loadSimilarPage(1);
       }
 
       const next = this.similarPage() + 1;
@@ -628,5 +689,10 @@ export class ContentDetailsPageComponent implements OnInit, OnDestroy {
       message.includes('already in watchlist') ||
       message.includes('already added')
     );
+  }
+
+  private playAddTickPulse(): void {
+    this.showAddTickPulse.set(true);
+    setTimeout(() => this.showAddTickPulse.set(false), 600);
   }
 }

@@ -52,13 +52,17 @@ const PROVIDER_LABELS: Record<string, string> = {
             type="button"
             (click)="addToWatchlist($event)"
             [disabled]="isAdding() || isAdded()"
-            class="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-[var(--radius-pill)] border border-black/10 bg-white text-black shadow-sm transition-colors disabled:cursor-not-allowed"
+            class="absolute right-2 top-2 flex h-8 w-8 items-center justify-center overflow-hidden rounded-[var(--radius-pill)] border border-black/10 bg-white text-black shadow-sm transition-colors disabled:cursor-not-allowed"
             [ngClass]="
               isAdded()
                 ? 'bg-black text-white border-black'
                 : 'hover:bg-black hover:text-white'
             "
           >
+            @if (showTickPulse()) {
+              <span class="absolute inset-0 animate-ping bg-black/25"></span>
+            }
+
             @if (isAdding()) {
               <div class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
             } @else if (isAdded()) {
@@ -103,6 +107,7 @@ export class ShowCardComponent {
   watchlistService = inject(WatchlistService);
   isAdding = signal(false);
   isAdded = signal(false);
+  showTickPulse = signal(false);
 
   displayTitle(): string {
     return this.item.title || this.item.name || 'Untitled';
@@ -161,19 +166,25 @@ export class ShowCardComponent {
       .subscribe({
         next: () => {
           this.isAdding.set(false);
-          this.isAdded.set(true);
+          this.markAddedWithTick();
         },
         error: (error) => {
           this.isAdding.set(false);
 
           if (this.isAlreadyAddedError(error)) {
-            this.isAdded.set(true);
+            this.markAddedWithTick();
             return;
           }
 
           console.error('Error adding to watchlist:', error);
         },
       });
+  }
+
+  private markAddedWithTick(): void {
+    this.isAdded.set(true);
+    this.showTickPulse.set(true);
+    setTimeout(() => this.showTickPulse.set(false), 450);
   }
 
   private toContentId(item: ContentItem): string {

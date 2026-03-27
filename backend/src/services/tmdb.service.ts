@@ -90,12 +90,18 @@ export interface PagedContentResult {
 
 interface DiscoverOptions {
     genres?: number[];
+    genreMode?: 'and' | 'or';
     providers?: number[];
     providerId?: number;
     watchRegion?: string;
     minRating?: number;
+    minVoteCount?: number;
     page?: number;
     sortBy?: string;
+    releaseDateGte?: string;
+    releaseDateLte?: string;
+    firstAirDateGte?: string;
+    firstAirDateLte?: string;
 }
 
 export interface CastMember {
@@ -209,6 +215,13 @@ class TMDBService {
     private imageBaseUrl = 'https://image.tmdb.org/t/p';
     private cache = new LRUCache<any>(200);
     private region = 'IN'; // Default region for watch providers
+
+    private providerAliasMap: Record<number, number[]> = {
+        9: [9, 119],
+        119: [9, 119],
+        337: [337, 122],
+        122: [337, 122]
+    };
 
     constructor() {
         this.apiKey = this.normalizeToken(process.env.TMDB_API_KEY);
@@ -381,7 +394,7 @@ class TMDBService {
         try {
             const [details, providers] = await Promise.all([
                 this.fetch<TMDBContentDetails>(`/${type}/${id}`, {
-                    append_to_response: 'credits,videos,similar'
+                    append_to_response: 'credits,videos'
                 }),
                 this.getWatchProviders(id, type)
             ]);
@@ -448,20 +461,38 @@ class TMDBService {
         const params: Record<string, string> = {
             page: String(normalizedPage),
             sort_by: options.sortBy || 'popularity.desc',
-            'vote_count.gte': '50', // Minimum votes for quality
             watch_region: watchRegion
         };
 
+        const minVoteCount = options.minVoteCount ?? 50;
+        if (minVoteCount > 0) {
+            params['vote_count.gte'] = String(minVoteCount);
+        }
+
         if (options.genres?.length) {
-            params.with_genres = options.genres.join(',');
+            params.with_genres = options.genreMode === 'or'
+                ? options.genres.join('|')
+                : options.genres.join(',');
         }
         if (typeof options.providerId === 'number') {
-            params.with_watch_providers = String(options.providerId);
+            params.with_watch_providers = this.expandProviderIds(options.providerId).join('|');
         } else if (options.providers?.length) {
             params.with_watch_providers = options.providers.join('|');
         }
         if (options.minRating) {
             params['vote_average.gte'] = String(options.minRating);
+        }
+        if (options.releaseDateGte) {
+            params['primary_release_date.gte'] = options.releaseDateGte;
+        }
+        if (options.releaseDateLte) {
+            params['primary_release_date.lte'] = options.releaseDateLte;
+        }
+        if (options.firstAirDateGte) {
+            params['first_air_date.gte'] = options.firstAirDateGte;
+        }
+        if (options.firstAirDateLte) {
+            params['first_air_date.lte'] = options.firstAirDateLte;
         }
 
         const data = await this.fetch<TMDBSearchResult>(`/discover/${type}`, params);
@@ -547,7 +578,7 @@ class TMDBService {
     ): ContentItem {
         const isMovie = type === 'movie';
         const castMembers: CastMember[] = (item.credits?.cast || [])
-            .slice(0, 20)
+            .slice(0, 5)
             .map((member) => ({
                 id: member.id,
                 name: member.name,
@@ -624,7 +655,11 @@ class TMDBService {
         const mapping: Record<number, string> = {
             8: 'netflix',
             9: 'prime',
+            119: 'prime',
             337: 'jiohotstar',
+            122: 'jiohotstar',
+            232: 'zee5',
+            237: 'sonyliv',
             384: 'hbo',
             15: 'hulu',
             350: 'apple',
@@ -638,16 +673,24 @@ class TMDBService {
      * Note: TMDB ID 337 is "JioHotstar" in India market (formerly Disney+ Hotstar)
      */
     getProviderTmdbIds(serviceIds: string[]): number[] {
-        const mapping: Record<string, number> = {
-            'netflix': 8,
-            'prime': 9,
-            'jiohotstar': 337,  // India: JioHotstar (formerly Disney+ Hotstar)
-            'hbo': 384,
-            'hulu': 15,
-            'apple': 350,
-            'paramount': 531
+        const mapping: Record<string, number[]> = {
+            'netflix': [8],
+            'prime': [9, 119],
+            'jiohotstar': [337, 122],
+            'zee5': [232],
+            'sonyliv': [237],
+            'hbo': [384],
+            'hulu': [15],
+            'apple': [350],
+            'paramount': [531]
         };
-        return serviceIds.map(id => mapping[id]).filter((id): id is number => id !== undefined);
+
+        const ids = serviceIds.flatMap((id) => mapping[id] ?? []);
+        return Array.from(new Set(ids));
+    }
+
+    private expandProviderIds(providerId: number): number[] {
+        return this.providerAliasMap[providerId] || [providerId];
     }
 }
 

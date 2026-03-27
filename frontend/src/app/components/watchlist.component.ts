@@ -165,9 +165,17 @@ import { WatchlistService, WatchlistItem } from '../services/watchlist.service';
                       class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                     >
                       <button
+                        type="button"
+                        (click)="removeFromWatchlist(item, $event)"
                         class="w-8 h-8 rounded-full bg-black/40 backdrop-blur-md border border-black/30 text-black flex items-center justify-center hover:bg-white hover:text-black transition-colors"
+                        [disabled]="isRemovingItem(item.contentId)"
+                        aria-label="Remove from watchlist"
                       >
-                        <lucide-icon name="plus" class="w-4 h-4"></lucide-icon>
+                        @if (isRemovingItem(item.contentId)) {
+                          <div class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black border-t-transparent"></div>
+                        } @else {
+                          <lucide-icon name="trash-2" class="w-4 h-4"></lucide-icon>
+                        }
                       </button>
                     </div>
                   </div>
@@ -287,6 +295,7 @@ export class WatchlistComponent implements OnInit, AfterViewInit {
   }
 
   items = signal<WatchlistItem[]>([]);
+  private removingIds = signal<Set<string>>(new Set());
 
   ngOnInit() {
     this.loadWatchlist();
@@ -388,7 +397,59 @@ export class WatchlistComponent implements OnInit, AfterViewInit {
     const parts = item.contentId.split('-');
     const type = parts[0]; // 'movie' or 'tv'
     const id = parts.slice(1).join('-'); // handles edge cases
-    void this.router.navigate(['/', type, id]);
+    const parsedTmdbId = Number.parseInt(id, 10);
+
+    void this.router.navigate(['/', type, id], {
+      state: {
+        preview: {
+          id: item.contentId,
+          tmdbId: Number.isInteger(parsedTmdbId) && parsedTmdbId > 0 ? parsedTmdbId : undefined,
+          type: type === 'tv' ? 'tv' : 'movie',
+          title: item.title,
+          name: type === 'tv' ? item.title : undefined,
+          poster_path: item.posterPath || '',
+          backdrop_path: item.backdropPath,
+          vote_average: item.rating ?? 0,
+        },
+      },
+    });
+  }
+
+  isRemovingItem(contentId: string): boolean {
+    return this.removingIds().has(contentId);
+  }
+
+  removeFromWatchlist(item: WatchlistItem, event: Event): void {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (this.isRemovingItem(item.contentId)) {
+      return;
+    }
+
+    this.removingIds.update((current) => {
+      const next = new Set(current);
+      next.add(item.contentId);
+      return next;
+    });
+
+    this.watchlistService.removeWatchlistItem(item.contentId).subscribe({
+      next: () => {
+        this.removingIds.update((current) => {
+          const next = new Set(current);
+          next.delete(item.contentId);
+          return next;
+        });
+      },
+      error: (err) => {
+        this.removingIds.update((current) => {
+          const next = new Set(current);
+          next.delete(item.contentId);
+          return next;
+        });
+        console.error('Error removing watchlist item:', err);
+      },
+    });
   }
 
   private normalizePlatform(value: string): string {

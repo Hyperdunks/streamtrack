@@ -4,7 +4,8 @@ import { LucideAngularModule } from 'lucide-angular';
 import { Router } from '@angular/router';
 import { ContentService, ContentItem } from '../services/content.service';
 import { WatchlistService } from '../services/watchlist.service';
-import { OnInit } from '@angular/core';
+import { OnDestroy, OnInit } from '@angular/core';
+import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-hero',
@@ -39,7 +40,20 @@ import { OnInit } from '@angular/core';
               <lucide-icon name="star" class="h-3.5 w-3.5 fill-white"></lucide-icon>
               Rating {{ (pick()?.vote_average || 0).toFixed(1) }}
             </span>
+            @if (slotLabel()) {
+              <span class="st-pill-meta">{{ slotLabel() }}</span>
+            }
+            @if (vibeLabel()) {
+              <span class="st-pill-meta">{{ vibeLabel() }}</span>
+            }
           </div>
+
+          <p
+            class="mb-8 max-w-[560px] text-sm text-black/70"
+            [ngClass]="{ 'opacity-0 translate-y-4': isLoading() }"
+          >
+            {{ tonightReason() }}
+          </p>
 
           <div class="flex flex-wrap gap-4">
             <button
@@ -51,12 +65,12 @@ import { OnInit } from '@angular/core';
             </button>
 
             <button
-              (click)="addPickToWatchlist()"
-              [disabled]="isAddingToWatchlist() || isPickAdded()"
+              (click)="togglePickWatchlist()"
+              [disabled]="isAddingToWatchlist() || isRemovingFromWatchlist()"
               class="st-pill relative overflow-hidden border-none font-mono text-[10px] font-bold uppercase tracking-[2px] transition-all duration-300 disabled:cursor-not-allowed"
               [ngClass]="
                 isPickAdded()
-                  ? 'bg-black text-white'
+                  ? 'bg-white text-black border border-black/20 hover:bg-black hover:text-white'
                   : 'bg-black text-white hover:bg-black/80'
               "
             >
@@ -68,15 +82,73 @@ import { OnInit } from '@angular/core';
                 @if (isAddingToWatchlist()) {
                   <div class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
                   ADDING...
+                } @else if (isRemovingFromWatchlist()) {
+                  <div class="animate-spin rounded-full h-4 w-4 border-2 border-black border-t-transparent"></div>
+                  REMOVING...
                 } @else if (isPickAdded()) {
-                  <lucide-icon name="check" class="w-4 h-4"></lucide-icon>
-                  ADDED
+                  <lucide-icon name="trash-2" class="w-4 h-4"></lucide-icon>
+                  REMOVE FROM WATCHLIST
                 } @else {
+                  <lucide-icon name="plus" class="w-4 h-4"></lucide-icon>
                   ADD TO WATCHLIST
                 }
               </span>
             </button>
           </div>
+
+          @if (tonightOptions().length > 1) {
+            <div class="mt-7">
+              <div class="mb-2 flex items-center justify-between gap-3">
+                <p class="text-[10px] font-mono uppercase tracking-[3px] text-black/45">
+                  More Tonight Options
+                </p>
+
+                @if (showOptionsSliderControls()) {
+                  <div class="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      (click)="scrollOptions(-1)"
+                      [disabled]="!canScrollOptionsPrev"
+                      class="h-7 w-7 rounded-full border border-black/15 text-black/80 transition-colors enabled:hover:bg-black enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+                      aria-label="Scroll tonight options left"
+                    >
+                      &lt;
+                    </button>
+                    <button
+                      type="button"
+                      (click)="scrollOptions(1)"
+                      [disabled]="!canScrollOptionsNext"
+                      class="h-7 w-7 rounded-full border border-black/15 text-black/80 transition-colors enabled:hover:bg-black enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+                      aria-label="Scroll tonight options right"
+                    >
+                      &gt;
+                    </button>
+                  </div>
+                }
+              </div>
+
+              <div
+                #optionsScroller
+                (scroll)="onOptionsScroll()"
+                class="no-scrollbar flex gap-2 overflow-x-auto scroll-smooth pb-1"
+              >
+                @for (option of tonightOptions(); track optionTrackId(option)) {
+                  <button
+                    type="button"
+                    (click)="switchOption(option)"
+                    class="shrink-0 rounded-full border px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider transition-colors"
+                    [ngClass]="
+                      isOptionSelected(option)
+                        ? 'border-black bg-black text-white'
+                        : 'border-black/15 bg-white text-black/80 hover:border-black/35'
+                    "
+                  >
+                    {{ optionTitle(option) }}
+                  </button>
+                }
+              </div>
+            </div>
+          }
         </div>
 
         <div
@@ -101,20 +173,38 @@ import { OnInit } from '@angular/core';
     </section>
   `,
 })
-export class HeroComponent implements OnInit {
+export class HeroComponent implements OnInit, OnDestroy {
   private contentService = inject(ContentService);
   private router = inject(Router);
   watchlistService = inject(WatchlistService);
 
   pick = signal<ContentItem | null>(null);
+  tonightOptions = signal<ContentItem[]>([]);
+  tonightReason = signal('');
+  slotLabel = signal('');
+  vibeLabel = signal('');
   isLoading = signal(true);
   isAddingToWatchlist = signal(false);
+  isRemovingFromWatchlist = signal(false);
   isPickAdded = signal(false);
   showTickPulse = signal(false);
   @ViewChild('visual') visualRef!: ElementRef<HTMLDivElement>;
+  @ViewChild('optionsScroller') optionsScrollerRef?: ElementRef<HTMLDivElement>;
+
+  canScrollOptionsPrev = false;
+  canScrollOptionsNext = false;
+
+  private watchlistSub?: Subscription;
+  private watchlistIds = new Set<string>();
 
   ngOnInit() {
     this.isLoading.set(true);
+
+    this.watchlistSub = this.watchlistService.getWatchlist().subscribe((items) => {
+      this.watchlistIds = new Set(items.map((item) => item.contentId));
+      this.syncPickWatchlistState();
+    });
+
     this.contentService.getTonightPick().subscribe({
       next: (data) => {
         if (!data.pick) {
@@ -122,9 +212,15 @@ export class HeroComponent implements OnInit {
           return;
         }
         this.pick.set(data.pick);
+        this.tonightOptions.set(this.buildUniqueOptions(data.options || [], data.pick));
+        this.syncOptionsScrollState();
+        this.tonightReason.set(data.reason || 'A top-rated pick for you right now.');
+        this.slotLabel.set(this.formatSlotLabel(data.slot));
+        this.vibeLabel.set(data.vibeName || '');
+        this.syncPickWatchlistState();
         this.isLoading.set(false);
-        this.isPickAdded.set(false);
         this.isAddingToWatchlist.set(false);
+        this.isRemovingFromWatchlist.set(false);
         this.showTickPulse.set(false);
       },
       error: () => {
@@ -139,6 +235,12 @@ export class HeroComponent implements OnInit {
         if (items.length > 0) {
           const randomIndex = Math.floor(Math.random() * Math.min(items.length, 5));
           this.pick.set(items[randomIndex]);
+          this.tonightOptions.set(this.buildUniqueOptions(items.slice(0, 8), items[randomIndex]));
+          this.syncOptionsScrollState();
+          this.tonightReason.set('Fallback pick from this week\'s trending titles.');
+          this.slotLabel.set('');
+          this.vibeLabel.set('');
+          this.syncPickWatchlistState();
         }
         this.isLoading.set(false);
       },
@@ -147,6 +249,10 @@ export class HeroComponent implements OnInit {
         this.isLoading.set(false);
       },
     });
+  }
+
+  ngOnDestroy(): void {
+    this.watchlistSub?.unsubscribe();
   }
 
   private isAlreadyAddedError(error: unknown): boolean {
@@ -175,12 +281,26 @@ export class HeroComponent implements OnInit {
     setTimeout(() => this.showTickPulse.set(false), 450);
   }
 
+  private markRemovedWithTick(): void {
+    this.isPickAdded.set(false);
+    this.showTickPulse.set(true);
+    setTimeout(() => this.showTickPulse.set(false), 450);
+  }
+
+  togglePickWatchlist(): void {
+    if (this.isPickAdded()) {
+      this.removePickFromWatchlist();
+      return;
+    }
+
+    this.addPickToWatchlist();
+  }
+
   addPickToWatchlist() {
     const item = this.pick();
-    if (!item || this.isAddingToWatchlist() || this.isPickAdded()) return;
+    if (!item || this.isAddingToWatchlist() || this.isRemovingFromWatchlist() || this.isPickAdded()) return;
 
-    const rawId = String(item.id);
-    const contentId = rawId.includes('-') ? rawId : `${item.type}-${rawId}`;
+    const contentId = this.toContentId(item);
     this.isAddingToWatchlist.set(true);
 
     this.watchlistService
@@ -210,6 +330,27 @@ export class HeroComponent implements OnInit {
       });
   }
 
+  removePickFromWatchlist(): void {
+    const item = this.pick();
+    if (!item || this.isRemovingFromWatchlist() || this.isAddingToWatchlist() || !this.isPickAdded()) {
+      return;
+    }
+
+    this.isRemovingFromWatchlist.set(true);
+    const contentId = this.toContentId(item);
+
+    this.watchlistService.removeWatchlistItem(contentId).subscribe({
+      next: () => {
+        this.isRemovingFromWatchlist.set(false);
+        this.markRemovedWithTick();
+      },
+      error: (err) => {
+        this.isRemovingFromWatchlist.set(false);
+        console.error('Error removing tonight pick:', err);
+      },
+    });
+  }
+
   openPickDetails(): void {
     const item = this.pick();
     if (!item) {
@@ -236,6 +377,57 @@ export class HeroComponent implements OnInit {
     return title;
   }
 
+  switchOption(item: ContentItem): void {
+    const current = this.pick();
+    if (!item || (current && this.optionTrackId(current) === this.optionTrackId(item))) {
+      return;
+    }
+
+    this.pick.set(item);
+    this.syncPickWatchlistState();
+    this.isAddingToWatchlist.set(false);
+    this.isRemovingFromWatchlist.set(false);
+    this.showTickPulse.set(false);
+  }
+
+  optionTrackId(item: ContentItem): string {
+    if (typeof item.tmdbId === 'number') {
+      return `${item.type}-${item.tmdbId}`;
+    }
+
+    return `${item.type}-${item.id}`;
+  }
+
+  optionTitle(item: ContentItem): string {
+    return item.title || item.name || 'Untitled';
+  }
+
+  isOptionSelected(item: ContentItem): boolean {
+    const current = this.pick();
+    if (!current) return false;
+
+    return this.optionTrackId(current) === this.optionTrackId(item);
+  }
+
+  showOptionsSliderControls(): boolean {
+    return this.tonightOptions().length > 1;
+  }
+
+  onOptionsScroll(): void {
+    this.updateOptionsScrollState();
+  }
+
+  scrollOptions(direction: -1 | 1): void {
+    const scroller = this.optionsScrollerRef?.nativeElement;
+    if (!scroller) {
+      return;
+    }
+
+    const delta = Math.max(220, Math.floor(scroller.clientWidth * 0.8));
+    scroller.scrollBy({ left: delta * direction, behavior: 'smooth' });
+    setTimeout(() => this.updateOptionsScrollState(), 280);
+  }
+
   private resolveTmdbId(item: ContentItem): number | null {
     if (typeof item.tmdbId === 'number' && Number.isInteger(item.tmdbId) && item.tmdbId > 0) {
       return item.tmdbId;
@@ -254,6 +446,60 @@ export class HeroComponent implements OnInit {
     return null;
   }
 
+  private formatSlotLabel(slot?: 'morning' | 'evening' | 'night'): string {
+    if (!slot) return '';
+    if (slot === 'morning') return 'Morning Slot';
+    if (slot === 'evening') return 'Evening Slot';
+    return 'Night Slot';
+  }
+
+  private buildUniqueOptions(items: ContentItem[], preferred?: ContentItem | null): ContentItem[] {
+    const deduped = new Map<string, ContentItem>();
+
+    if (preferred) {
+      deduped.set(this.optionTrackId(preferred), preferred);
+    }
+
+    items.forEach((item) => {
+      deduped.set(this.optionTrackId(item), item);
+    });
+
+    return Array.from(deduped.values()).slice(0, 8);
+  }
+
+  private syncOptionsScrollState(): void {
+    setTimeout(() => this.updateOptionsScrollState(), 0);
+  }
+
+  private updateOptionsScrollState(): void {
+    const scroller = this.optionsScrollerRef?.nativeElement;
+    if (!scroller) {
+      this.canScrollOptionsPrev = false;
+      this.canScrollOptionsNext = false;
+      return;
+    }
+
+    const epsilon = 2;
+    this.canScrollOptionsPrev = scroller.scrollLeft > epsilon;
+    this.canScrollOptionsNext =
+      scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - epsilon;
+  }
+
+  private toContentId(item: ContentItem): string {
+    const rawId = String(item.id);
+    return rawId.includes('-') ? rawId : `${item.type}-${rawId}`;
+  }
+
+  private syncPickWatchlistState(): void {
+    const current = this.pick();
+    if (!current) {
+      this.isPickAdded.set(false);
+      return;
+    }
+
+    this.isPickAdded.set(this.watchlistIds.has(this.toContentId(current)));
+  }
+
   @HostListener('mousemove', ['$event'])
   onMouseMove(e: MouseEvent) {
     if (!this.visualRef) return;
@@ -268,5 +514,10 @@ export class HeroComponent implements OnInit {
   onMouseLeave() {
     if (!this.visualRef) return;
     this.visualRef.nativeElement.style.transform = `perspective(1000px) rotateY(0) rotateX(0) scale(1)`;
+  }
+
+  @HostListener('window:resize')
+  onResize(): void {
+    this.updateOptionsScrollState();
   }
 }

@@ -99,6 +99,7 @@ Status tracking lives in `specs/IMPLEMENTATION_PLAN.md`.
 - `firebaseUid` (unique index).
 - `email`.
 - `name`.
+- `photoURL`.
 - `services: string[]`.
 - `genres: number[]`.
 - `watchlist: IWatchlistItem[]`.
@@ -130,6 +131,7 @@ Status tracking lives in `specs/IMPLEMENTATION_PLAN.md`.
 - Content:
 - `GET /api/content/search`.
 - `GET /api/content/trending`.
+- `GET /api/content/upcoming`.
 - `GET /api/content/trending/filtered` (auth required).
 - `GET /api/content/:type/:id`.
 - `GET /api/content/:type/:id/providers`.
@@ -189,7 +191,7 @@ Status tracking lives in `specs/IMPLEMENTATION_PLAN.md`.
 - optional max runtime (currently not strongly enforced).
 - Discover route supports both predefined and custom vibes.
 - Custom vibe ID format in API requests: `custom-{id}`.
-- Tonight's pick is heuristic, time-of-day based, then random from top candidates.
+- Tonight's pick uses local-time slots (morning/evening/night) to pick a primary vibe and prioritize top-rated titles, preferring the user's subscriptions when available.
 
 ## 13) Watchlist Behavior Notes
 

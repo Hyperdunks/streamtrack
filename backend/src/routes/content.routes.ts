@@ -20,6 +20,14 @@ function parseType(value: unknown): 'movie' | 'tv' | 'all' {
     return 'all';
 }
 
+function parseMediaType(value: unknown, fallback: 'movie' | 'tv' = 'movie'): 'movie' | 'tv' {
+    if (value === 'movie' || value === 'tv') {
+        return value;
+    }
+
+    return fallback;
+}
+
 function parseTmdbId(value: unknown): number | null {
     const parsed = Number.parseInt(String(value), 10);
     if (Number.isNaN(parsed) || parsed <= 0) {
@@ -48,6 +56,23 @@ function parseWatchRegion(value: unknown): string {
     }
 
     return value.trim().toUpperCase();
+}
+
+function toIsoDateString(date: Date): string {
+    return date.toISOString().split('T')[0];
+}
+
+function getNextMonthDateRange(now = new Date()): { start: string; end: string } {
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth();
+
+    const startDate = new Date(Date.UTC(year, month + 1, 1));
+    const endDate = new Date(Date.UTC(year, month + 2, 0));
+
+    return {
+        start: toIsoDateString(startDate),
+        end: toIsoDateString(endDate)
+    };
 }
 
 async function sendContentDetails(type: 'movie' | 'tv', idValue: unknown, res: Response): Promise<void> {
@@ -161,6 +186,37 @@ router.get('/tv-shows', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/content/upcoming
+ * Get movies or TV premieres for next calendar month
+ * Query params: type (movie|tv), page
+ */
+router.get('/upcoming', async (req: Request, res: Response) => {
+    try {
+        const page = parsePage(req.query.page);
+        const type = parseMediaType(req.query.type, 'movie');
+        const providerId = parseProviderId(req.query.providerId);
+        const watchRegion = parseWatchRegion(req.query.watch_region);
+        const { start, end } = getNextMonthDateRange();
+
+        const response = await tmdbService.discoverPaged(type, {
+            page,
+            providerId,
+            watchRegion,
+            sortBy: type === 'movie' ? 'primary_release_date.asc' : 'first_air_date.asc',
+            minVoteCount: 0,
+            ...(type === 'movie'
+                ? { releaseDateGte: start, releaseDateLte: end }
+                : { firstAirDateGte: start, firstAirDateLte: end })
+        });
+
+        res.json({ ...response, type });
+    } catch (error) {
+        console.error('Upcoming content error:', error);
+        res.status(500).json({ error: 'Failed to get upcoming content' });
+    }
+});
+
+/**
  * GET /api/content/movie/:id
  * Get full movie details with appended credits/videos/similar
  */
@@ -221,9 +277,64 @@ router.get('/trending', async (req: Request, res: Response) => {
     try {
         const type = (req.query.type as 'movie' | 'tv' | 'all') || 'all';
         const timeWindow = (req.query.time as 'day' | 'week') || 'week';
+        const page = parsePage(req.query.page);
+        const providerId = parseProviderId(req.query.providerId);
+        const watchRegion = parseWatchRegion(req.query.watch_region);
+
+        if (typeof providerId === 'number' && (type === 'movie' || type === 'tv')) {
+            const filteredTrending = await tmdbService.discoverPaged(type, {
+                page,
+                providerId,
+                watchRegion,
+                sortBy: 'popularity.desc'
+            });
+
+            res.json(filteredTrending);
+            return;
+        }
+
+        if (typeof providerId === 'number' && type === 'all') {
+            const [movieResults, tvResults] = await Promise.all([
+                tmdbService.discoverPaged('movie', {
+                    page,
+                    providerId,
+                    watchRegion,
+                    sortBy: 'popularity.desc'
+                }),
+                tmdbService.discoverPaged('tv', {
+                    page,
+                    providerId,
+                    watchRegion,
+                    sortBy: 'popularity.desc'
+                })
+            ]);
+
+            const merged = [...movieResults.results, ...tvResults.results]
+                .sort((a, b) => {
+                    if (b.vote_average !== a.vote_average) {
+                        return b.vote_average - a.vote_average;
+                    }
+
+                    return (b.vote_count || 0) - (a.vote_count || 0);
+                })
+                .slice(0, 40);
+
+            res.json({
+                results: merged,
+                page,
+                totalPages: Math.max(1, Math.min(movieResults.totalPages || 1, tvResults.totalPages || 1)),
+                totalResults: (movieResults.totalResults || 0) + (tvResults.totalResults || 0)
+            });
+            return;
+        }
 
         const results = await tmdbService.getTrending(type, timeWindow);
-        res.json({ results });
+        res.json({
+            results,
+            page: 1,
+            totalPages: 1,
+            totalResults: results.length
+        });
     } catch (error) {
         console.error('Trending error:', error);
         res.status(500).json({ error: 'Failed to get trending content' });

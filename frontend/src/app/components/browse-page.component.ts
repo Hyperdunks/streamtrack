@@ -6,11 +6,13 @@ import { ContentGridComponent } from './content-grid.component';
 import {
   ContentItem,
   ContentService,
+  DiscoverGenre,
   PagedContentResponse,
 } from '../services/content.service';
 import { StateService } from '../services/state.service';
 
 type BrowseCategory = 'trending' | 'movies' | 'tv' | 'anime';
+type SearchSort = 'relevance' | 'genre-asc' | 'genre-desc';
 
 interface BrowseConfig {
   title: string;
@@ -34,7 +36,7 @@ const BROWSE_CONFIG: Record<BrowseCategory, BrowseConfig> = {
           <h1 class="text-3xl font-bold tracking-tight text-black">{{ title() }}</h1>
           <p class="text-[11px] font-mono text-black/50 uppercase tracking-widest mt-2">
             @if (hasSearch()) {
-              {{ totalResults() }} search matches
+              {{ displayedCount() }} of {{ totalResults() }} search matches
             } @else {
               {{ totalResults() }} titles found
             }
@@ -43,15 +45,50 @@ const BROWSE_CONFIG: Record<BrowseCategory, BrowseConfig> = {
         <a
           routerLink="/"
           class="text-[11px] font-mono text-black/60 uppercase tracking-widest hover:text-black transition-colors no-underline"
-          >Back to Home</a
+        >Back to Home</a
         >
       </div>
+
+      @if (hasSearch()) {
+        <div class="mb-6 grid grid-cols-1 gap-3 rounded-xl border border-black/10 bg-black/[0.02] p-3 sm:grid-cols-2">
+          <div>
+            <label class="mb-1.5 block text-[10px] font-mono uppercase tracking-widest text-black/55">
+              Filter by Genre
+            </label>
+            <select
+              [value]="selectedGenreValue()"
+              (change)="onGenreChange($event)"
+              class="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm text-black outline-none transition-colors focus:border-black/40"
+            >
+              <option value="all">All genres</option>
+              @for (genre of availableGenres(); track genre.id) {
+                <option [value]="genre.id">{{ genre.name }}</option>
+              }
+            </select>
+          </div>
+
+          <div>
+            <label class="mb-1.5 block text-[10px] font-mono uppercase tracking-widest text-black/55">
+              Sort
+            </label>
+            <select
+              [value]="searchSort()"
+              (change)="onSortChange($event)"
+              class="w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm text-black outline-none transition-colors focus:border-black/40"
+            >
+              <option value="relevance">Relevance</option>
+              <option value="genre-asc">Genre A-Z</option>
+              <option value="genre-desc">Genre Z-A</option>
+            </select>
+          </div>
+        </div>
+      }
 
       @if (isLoading()) {
         <div class="py-16 text-center text-black/60 font-mono text-sm uppercase tracking-widest">
           {{ loadingMessage() }}
         </div>
-      } @else if (items().length === 0) {
+      } @else if (displayedItems().length === 0) {
         <div class="py-16 text-center text-black/60 font-mono text-sm uppercase tracking-widest">
           @if (hasSearch()) {
             No results found for your search.
@@ -62,7 +99,7 @@ const BROWSE_CONFIG: Record<BrowseCategory, BrowseConfig> = {
       } @else {
         <app-content-grid
           [title]="title()"
-          [items]="items()"
+          [items]="displayedItems()"
           [maxItems]="null"
           [layout]="'grid'"
         ></app-content-grid>
@@ -113,25 +150,81 @@ export class BrowsePageComponent implements OnInit, OnDestroy {
   totalPages = signal(1);
   totalResults = signal(0);
   query = signal('');
+  genres = signal<DiscoverGenre[]>([]);
+  selectedGenreId = signal<number | null>(null);
+  searchSort = signal<SearchSort>('relevance');
   isLoading = signal(true);
   loadingMessage = signal('Loading titles...');
 
   hasSearch = computed(() => this.query().length > 0);
+  availableGenres = computed(() => {
+    const genreMap = new Map<number, string>();
+
+    this.items().forEach((item) => {
+      (item.genre_ids || []).forEach((genreId) => {
+        const name = this.genreNameById(genreId);
+        if (name) {
+          genreMap.set(genreId, name);
+        }
+      });
+    });
+
+    return Array.from(genreMap.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  });
+  displayedItems = computed(() => {
+    if (!this.hasSearch()) {
+      return this.items();
+    }
+
+    const selectedGenreId = this.selectedGenreId();
+    const filtered = selectedGenreId
+      ? this.items().filter((item) => (item.genre_ids || []).includes(selectedGenreId))
+      : [...this.items()];
+
+    const sortMode = this.searchSort();
+    if (sortMode === 'relevance') {
+      return filtered;
+    }
+
+    const direction = sortMode === 'genre-asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const genreA = this.primaryGenreName(a);
+      const genreB = this.primaryGenreName(b);
+      const byGenre = genreA.localeCompare(genreB) * direction;
+
+      if (byGenre !== 0) {
+        return byGenre;
+      }
+
+      const titleA = (a.title || a.name || '').toLowerCase();
+      const titleB = (b.title || b.name || '').toLowerCase();
+      return titleA.localeCompare(titleB);
+    });
+  });
+  displayedCount = computed(() => this.displayedItems().length);
   canGoPrev = computed(() => this.page() > 1);
   canGoNext = computed(() => this.page() < this.totalPages());
   hasPagination = computed(() => this.totalPages() > 1);
 
   ngOnInit(): void {
+    this.loadGenres();
+
     this.routeSub = combineLatest([this.route.paramMap, this.route.queryParamMap]).subscribe(
       ([params, queryParams]) => {
         const category = this.resolveCategory(params.get('category'));
         const config = BROWSE_CONFIG[category];
         const page = this.parsePage(queryParams.get('page'));
         const query = (queryParams.get('q') || '').trim();
+        const selectedGenreId = this.parseGenreId(queryParams.get('genre'));
+        const searchSort = this.parseSearchSort(queryParams.get('sort'));
 
         this.title.set(config.title);
         this.page.set(page);
         this.query.set(query);
+        this.selectedGenreId.set(query ? selectedGenreId : null);
+        this.searchSort.set(query ? searchSort : 'relevance');
         this.state.searchQuery.set(query);
 
         void this.loadPage(category, page, query);
@@ -152,6 +245,40 @@ export class BrowsePageComponent implements OnInit, OnDestroy {
       queryParams: {
         page: nextPage,
         q: this.query() || null,
+        genre: this.selectedGenreId() || null,
+        sort: this.searchSort() === 'relevance' ? null : this.searchSort(),
+      },
+      queryParamsHandling: 'merge',
+    });
+  }
+
+  selectedGenreValue(): string {
+    return this.selectedGenreId() ? String(this.selectedGenreId()) : 'all';
+  }
+
+  onGenreChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    const genre = this.parseGenreId(value);
+
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        page: 1,
+        genre: genre || null,
+      },
+      queryParamsHandling: 'merge',
+    });
+  }
+
+  onSortChange(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value;
+    const sort = this.parseSearchSort(value);
+
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        page: 1,
+        sort: sort === 'relevance' ? null : sort,
       },
       queryParamsHandling: 'merge',
     });
@@ -221,6 +348,9 @@ export class BrowsePageComponent implements OnInit, OnDestroy {
   }
 
   private getPageRequest(category: BrowseCategory, page: number, query: string) {
+    const providerId = this.state.selectedProviderId();
+    const watchRegion = this.state.selectedWatchRegion();
+
     if (query) {
       const type: 'movie' | 'tv' | 'all' =
         category === 'movies' ? 'movie' : category === 'tv' ? 'tv' : 'all';
@@ -228,18 +358,18 @@ export class BrowsePageComponent implements OnInit, OnDestroy {
     }
 
     if (category === 'movies') {
-      return this.contentService.getMoviesPage(page);
+      return this.contentService.getMoviesPage(page, providerId, watchRegion);
     }
 
     if (category === 'tv') {
-      return this.contentService.getTvShowsPage(page);
+      return this.contentService.getTvShowsPage(page, providerId, watchRegion);
     }
 
     if (category === 'anime') {
       return this.contentService.getAnimePage(page);
     }
 
-    return this.contentService.getTrendingPage('all', 'week', page);
+    return this.contentService.getTrendingPage('all', 'week', page, providerId, watchRegion);
   }
 
   private getLoadingMessage(category: BrowseCategory, query: string): string {
@@ -253,8 +383,49 @@ export class BrowsePageComponent implements OnInit, OnDestroy {
     return 'Loading trending titles...';
   }
 
+  private loadGenres(): void {
+    this.contentService.getDiscoverGenres().subscribe({
+      next: (genres) => {
+        this.genres.set(genres || []);
+      },
+      error: (error) => {
+        console.error('Error loading genres for search filters:', error);
+        this.genres.set([]);
+      },
+    });
+  }
+
   private buildCacheKey(category: BrowseCategory, page: number, query: string): string {
     return `${category}|${query.toLowerCase()}|${page}`;
+  }
+
+  private parseGenreId(value: string | null): number | null {
+    if (!value || value === 'all') return null;
+
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isNaN(parsed) || parsed <= 0) return null;
+    return parsed;
+  }
+
+  private parseSearchSort(value: string | null): SearchSort {
+    if (value === 'genre-asc' || value === 'genre-desc') {
+      return value;
+    }
+
+    return 'relevance';
+  }
+
+  private genreNameById(genreId: number): string {
+    return this.genres().find((genre) => genre.id === genreId)?.name || '';
+  }
+
+  private primaryGenreName(item: ContentItem): string {
+    const names = (item.genre_ids || [])
+      .map((genreId) => this.genreNameById(genreId))
+      .filter((name) => !!name)
+      .sort((a, b) => a.localeCompare(b));
+
+    return names[0] || 'zzzz';
   }
 
   private parsePage(value: string | null): number {

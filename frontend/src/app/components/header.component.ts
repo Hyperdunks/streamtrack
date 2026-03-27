@@ -24,8 +24,8 @@ import { WatchlistService } from '../services/watchlist.service';
 const PROVIDER_TO_TMDB_ID: Record<string, number | null> = {
   All: null,
   Netflix: 8,
-  'Prime Video': 119,
-  JioHotstar: 122,
+  'Prime Video': 9,
+  JioHotstar: 337,
   Zee5: 232,
   ZEE5: 232,
   SonyLIV: 237,
