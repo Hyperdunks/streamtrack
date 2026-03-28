@@ -52,7 +52,8 @@ describe("Watchlist Routes", () => {
             contentId: "123",
             title: "Test Movie",
             type: "movie",
-            posterPath: "/path.jpg"
+            posterPath: "/path.jpg",
+            genre: "Action / Thriller"
         };
 
         const res = await request(app)
@@ -63,10 +64,12 @@ describe("Watchlist Routes", () => {
         expect(res.status).toBe(201);
         expect(res.body.item.contentId).toBe("123");
         expect(res.body.item.status).toBe("want");
+        expect(res.body.item.genre).toBe("Action / Thriller");
 
         const user = await User.findOne({ firebaseUid: "test-uid" });
         expect(user?.watchlist).toHaveLength(1);
         expect(user?.watchlist[0].contentId).toBe("123");
+        expect(user?.watchlist[0].genre).toBe("Action / Thriller");
     });
 
     it("should get the watchlist", async () => {
@@ -79,6 +82,7 @@ describe("Watchlist Routes", () => {
                         contentId: "123",
                         title: "Test Movie",
                         type: "movie",
+                        genre: "Drama",
                         status: "want",
                         addedAt: new Date()
                     }
@@ -92,6 +96,7 @@ describe("Watchlist Routes", () => {
         expect(res.status).toBe(200);
         expect(res.body.watchlist).toHaveLength(1);
         expect(res.body.watchlist[0].contentId).toBe("123");
+        expect(res.body.watchlist[0].genre).toBe("Drama");
     });
 
     it("should update a watchlist item", async () => {
@@ -104,6 +109,7 @@ describe("Watchlist Routes", () => {
                         contentId: "123",
                         title: "Test Movie",
                         type: "movie",
+                        genre: "Sci-Fi",
                         status: "want",
                         addedAt: new Date()
                     }
@@ -123,6 +129,7 @@ describe("Watchlist Routes", () => {
         const user = await User.findOne({ firebaseUid: "test-uid" });
         const item = user?.watchlist.find(i => i.contentId === "123");
         expect(item?.status).toBe("watched");
+        expect(item?.genre).toBe("Sci-Fi");
     });
 
     it("should delete a watchlist item", async () => {

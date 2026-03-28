@@ -214,6 +214,7 @@ export class ShowCardComponent implements OnChanges {
         type: this.item.type,
         posterPath: this.item.poster_path,
         backdropPath: this.item.backdrop_path,
+        genre: this.item.genres?.join(' / '),
         status: 'want',
       })
       .subscribe({
