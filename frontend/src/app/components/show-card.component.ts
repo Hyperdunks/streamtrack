@@ -1,8 +1,8 @@
 import { CommonModule } from '@angular/common';
-import { Component, Input, inject, signal } from '@angular/core';
+import { Component, Input, OnChanges, SimpleChanges, inject, signal } from '@angular/core';
 import { LucideAngularModule } from 'lucide-angular';
 import { Router } from '@angular/router';
-import { ContentItem } from '../services/content.service';
+import { ContentItem, ContentService } from '../services/content.service';
 import { WatchlistService } from '../services/watchlist.service';
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -93,21 +93,34 @@ const PROVIDER_LABELS: Record<string, string> = {
                 {{ provider }}
               </span>
             }
+
+            @if (isLoadingProviders()) {
+              <span class="rounded-md border border-black/10 bg-black/[0.03] px-2 py-1 text-[10px] font-medium text-black/50">
+                Checking availability
+              </span>
+            } @else if (providerBadges().length === 0) {
+              <span class="rounded-md border border-black/10 bg-black/[0.03] px-2 py-1 text-[10px] font-medium text-black/50">
+                No streaming info
+              </span>
+            }
           </div>
         </div>
       </div>
     </article>
   `,
 })
-export class ShowCardComponent {
+export class ShowCardComponent implements OnChanges {
   @Input({ required: true }) item!: ContentItem;
   @Input() mode: 'rail' | 'grid' = 'rail';
 
   private router = inject(Router);
+  private contentService = inject(ContentService);
   watchlistService = inject(WatchlistService);
   isAdding = signal(false);
   isAdded = signal(false);
   showTickPulse = signal(false);
+  providerLabels = signal<string[]>([]);
+  isLoadingProviders = signal(false);
 
   displayTitle(): string {
     return this.item.title || this.item.name || 'Untitled';
@@ -121,13 +134,53 @@ export class ShowCardComponent {
     return Number.isFinite(this.item.vote_average) ? this.item.vote_average.toFixed(1) : '0.0';
   }
 
-  providerBadges(): string[] {
-    const providers = this.item.watchProviders ?? [];
-    if (providers.length === 0) {
-      return ['OTT Info Soon'];
+  ngOnChanges(changes: SimpleChanges): void {
+    if (!('item' in changes) || !this.item) {
+      return;
     }
 
-    return providers.slice(0, 3).map((provider) => PROVIDER_LABELS[provider] || provider);
+    const existingProviders = this.item.watchProviders ?? [];
+    if (existingProviders.length > 0) {
+      this.providerLabels.set(this.mapProviderLabels(existingProviders));
+      this.isLoadingProviders.set(false);
+      return;
+    }
+
+    const tmdbId = this.resolveTmdbId(this.item);
+    if (!tmdbId) {
+      this.providerLabels.set([]);
+      this.isLoadingProviders.set(false);
+      return;
+    }
+
+    this.isLoadingProviders.set(true);
+    this.providerLabels.set([]);
+    const contentType = this.item.type;
+    this.contentService.getWatchProviders(this.item.type, tmdbId).subscribe({
+      next: (providers) => {
+        const currentTmdbId = this.resolveTmdbId(this.item);
+        if (currentTmdbId !== tmdbId || this.item.type !== contentType) {
+          return;
+        }
+
+        this.providerLabels.set(this.mapProviderLabels(providers));
+        this.isLoadingProviders.set(false);
+      },
+      error: (error) => {
+        const currentTmdbId = this.resolveTmdbId(this.item);
+        if (currentTmdbId !== tmdbId || this.item.type !== contentType) {
+          return;
+        }
+
+        console.error('Error loading watch providers:', error);
+        this.providerLabels.set([]);
+        this.isLoadingProviders.set(false);
+      },
+    });
+  }
+
+  providerBadges(): string[] {
+    return this.providerLabels();
   }
 
   openDetails(): void {
@@ -185,6 +238,12 @@ export class ShowCardComponent {
     this.isAdded.set(true);
     this.showTickPulse.set(true);
     setTimeout(() => this.showTickPulse.set(false), 450);
+  }
+
+  private mapProviderLabels(providers: string[]): string[] {
+    return Array.from(new Set(providers))
+      .slice(0, 3)
+      .map((provider) => PROVIDER_LABELS[provider] || provider);
   }
 
   private toContentId(item: ContentItem): string {

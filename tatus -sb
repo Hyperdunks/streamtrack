@@ -1,8 +1,0 @@
-* [33m1d426ea[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31mfinal-upstream/main[m[33m)[m feat: Google auth integration, landing page scroll fix, and watchlist navigation improvements
-*   [33mfd371fe[m Merge pull request #10 from Hyperdunks/fix/connection
-[32m|[m[33m\[m  
-[32m|[m * [33mf78ad9f[m fix
-[32m|[m[32m/[m  
-*   [33m18410c5[m Merge pull request #9 from 4wadia/main
-[34m|[m[35m\[m  
-[34m|[m * [33mb810a6e[m feat: implement animated header and ui updates
