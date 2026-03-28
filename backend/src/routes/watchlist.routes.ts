@@ -81,7 +81,7 @@ router.get('/stats', authMiddleware, async (req: AuthRequest, res: Response) => 
 router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
         const { uid } = req.user!;
-        const { contentId, title, type, posterPath, status, rating, notes } = req.body;
+        const { contentId, title, type, posterPath, genre, status, rating, notes } = req.body;
 
         let normalizedRating: number | undefined = undefined;
 
@@ -114,6 +114,11 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
             return;
         }
 
+        if (genre !== undefined && typeof genre !== 'string') {
+            res.status(400).json({ error: 'Genre must be a string' });
+            return;
+        }
+
         const user = await User.findOne({ firebaseUid: uid });
         if (!user) {
             res.status(404).json({ error: 'User not found' });
@@ -132,6 +137,7 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
             title,
             type,
             posterPath,
+            genre: typeof genre === 'string' ? genre.trim() || undefined : undefined,
             status: status || 'want',
             rating: normalizedRating,
             notes,

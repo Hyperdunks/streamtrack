@@ -5,6 +5,7 @@ export interface IWatchlistItem {
     title: string;
     type: 'movie' | 'tv';
     posterPath?: string;
+    genre?: string;
     status: 'want' | 'watching' | 'watched';
     rating?: number;
     notes?: string;
@@ -39,6 +40,7 @@ const WatchlistItemSchema = new Schema<IWatchlistItem>({
     title: { type: String, required: true },
     type: { type: String, enum: ['movie', 'tv'], required: true },
     posterPath: String,
+    genre: String,
     status: { type: String, enum: ['want', 'watching', 'watched'], default: 'want' },
     rating: { type: Number, min: 0, max: 10 },
     notes: String,

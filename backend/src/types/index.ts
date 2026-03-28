@@ -15,6 +15,7 @@ export interface WatchlistItem {
     title: string;
     type: 'movie' | 'tv';
     posterPath: string;
+    genre?: string;
     status: 'want' | 'watching' | 'watched';
     rating?: number;
     notes?: string;

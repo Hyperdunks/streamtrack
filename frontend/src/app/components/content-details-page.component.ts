@@ -409,6 +409,7 @@ export class ContentDetailsPageComponent implements OnInit, OnDestroy {
         type: detail.type,
         posterPath: detail.poster_path,
         backdropPath: detail.backdrop_path,
+        genre: detail.genres?.join(' / '),
         status: 'want',
       })
       .subscribe({

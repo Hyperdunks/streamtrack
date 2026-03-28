@@ -310,6 +310,7 @@ export class HeroComponent implements OnInit, OnDestroy {
         type: item.type,
         posterPath: item.poster_path,
         backdropPath: item.backdrop_path,
+        genre: item.genres?.join(' / '),
         status: 'want',
       })
       .subscribe({
