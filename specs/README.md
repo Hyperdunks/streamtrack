@@ -7,6 +7,8 @@ This folder intentionally contains only operational docs that are still useful.
 - `IMPLEMENTATION_PLAN.md`: phase tracking and current delivery status.
 - `API_TESTING.md`: endpoint reference and test-oriented request/response examples.
 - `BUILD.md`: setup and run instructions.
+- `streamtrack-project-report.md`: comprehensive academic-style project documentation.
+- `streamtrack-project-report.docx`: generated Word version of the project report.
 
 ## Removed
 

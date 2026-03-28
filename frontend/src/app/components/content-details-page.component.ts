@@ -388,8 +388,10 @@ export class ContentDetailsPageComponent implements OnInit, OnDestroy {
     await this.loadSimilarPage(nextPage);
   }
 
-  addToWatchlist(): void {
-    if (!this.authService.isAuthenticated()) {
+  async addToWatchlist(): Promise<void> {
+    await this.authService.waitForInit();
+
+    if (!this.authService.hasActiveSession()) {
       void this.router.navigate(['/login']);
       return;
     }

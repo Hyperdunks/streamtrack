@@ -10,10 +10,13 @@
         "typecheck": "tsc --noEmit",
         "lint": "eslint src --ext .ts",
         "test": "bun test",
-        "check-env": "bun run --env-file ../.env scripts/check-env.ts"
+        "check-env": "bun run --env-file ../.env scripts/check-env.ts",
+        "generate:intro-doc": "bun run scripts/generate-intro-doc.ts",
+        "generate:project-doc": "bun run scripts/generate-project-doc.ts"
     },
     "dependencies": {
         "cors": "^2.8.6",
+        "docx": "^9.6.1",
         "express": "^4.22.1",
         "firebase-admin": "^13.7.0",
         "mongoose": "^8.23.0"

@@ -27,6 +27,8 @@ export interface AuthUser {
 })
 export class AuthService {
   private api = inject(ApiService);
+  private resolveInit?: () => void;
+  private initPromise: Promise<void>;
   
   private currentUserSignal = signal<AuthUser | null>(null);
   private firebaseUserSignal = signal<FirebaseUser | null>(null);
@@ -35,10 +37,16 @@ export class AuthService {
   
   currentUser = computed(() => this.currentUserSignal());
   isAuthenticated = computed(() => !!this.currentUserSignal());
+  hasActiveSession = computed(() => !!this.firebaseUserSignal());
   isInitialized = computed(() => this.isInitializedSignal());
   isAuthUnavailable = computed(() => this.authUnavailableSignal());
+  watchlistStorageKey = computed(() => this.firebaseUserSignal()?.uid || 'guest');
 
   constructor() {
+    this.initPromise = new Promise((resolve) => {
+      this.resolveInit = resolve;
+    });
+
     // Initialize Firebase
     const app = getApps().length === 0 ? initializeApp(environment.firebase) : getApp();
     const auth = getAuth(app);
@@ -46,47 +54,46 @@ export class AuthService {
     // Listen to Firebase Auth state changes
     onAuthStateChanged(auth, async (user: FirebaseUser | null) => {
       this.firebaseUserSignal.set(user);
-      if (user) {
-        // Sync with backend
-        try {
+      this.currentUserSignal.set(null);
+      this.authUnavailableSignal.set(false);
+
+      try {
+        if (user) {
           const res = await firstValueFrom(this.api.get<{ user: AuthUser }>('/auth/me'));
-          if (res && res.user) {
+          if (res?.user) {
             this.currentUserSignal.set(res.user);
-            this.authUnavailableSignal.set(false);
-          }
-        } catch (error: any) {
-          // Silently handle auth service unavailable - enable guest mode
-          if (error?.status === 503 || error?.status === 401 || !error) {
-            console.warn('Auth service unavailable, running in guest/browse-only mode');
-            this.authUnavailableSignal.set(true);
-          } else {
-            console.error('Failed to fetch user from backend', error);
           }
         }
-      } else {
-        this.currentUserSignal.set(null);
+      } catch (error: unknown) {
+        const status = typeof (error as { status?: unknown })?.status === 'number'
+          ? (error as { status: number }).status
+          : undefined;
+
+        if (status === 503 || !error) {
+          console.warn('Auth service unavailable, running in guest/browse-only mode');
+          this.authUnavailableSignal.set(true);
+        } else if (status !== 401) {
+          console.error('Failed to fetch user from backend', error);
+        }
+      } finally {
+        this.isInitialLoadDone = true;
+        this.isInitializedSignal.set(true);
+        this.resolveInit?.();
+        this.resolveInit = undefined;
       }
-      this.isInitialLoadDone = true;
-      this.isInitializedSignal.set(true);
     });
   }
 
   private isInitialLoadDone = false;
   async waitForInit(): Promise<void> {
     if (this.isInitialLoadDone) return;
-    
-    return new Promise((resolve) => {
-      const auth = getAuth();
-      const unsubscribe = onAuthStateChanged(auth, () => {
-        unsubscribe();
-        resolve();
-      });
-    });
+
+    return this.initPromise;
   }
 
   async signup(payload: { name: string; email: string; password: string }): Promise<AuthUser> {
     const auth = getAuth();
-    const { user } = await createUserWithEmailAndPassword(auth, payload.email, payload.password);
+    await createUserWithEmailAndPassword(auth, payload.email, payload.password);
     
     // The authInterceptor will handle attaching the token to the request
     // But since the interceptor waits for getToken(), this will work contextually.
@@ -100,7 +107,7 @@ export class AuthService {
 
   async login(payload: { email: string; password: string }): Promise<AuthUser> {
     const auth = getAuth();
-    const { user } = await signInWithEmailAndPassword(auth, payload.email, payload.password);
+    await signInWithEmailAndPassword(auth, payload.email, payload.password);
     
     const response = await firstValueFrom(this.api.post<{ user: AuthUser, message: string }>('/auth/login', {}));
     this.currentUserSignal.set(response.user);

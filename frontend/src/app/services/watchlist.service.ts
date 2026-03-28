@@ -1,6 +1,7 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, effect, inject } from '@angular/core';
 import { BehaviorSubject, Observable, catchError, map, of, tap, throwError } from 'rxjs';
 import { ApiService } from './api.service';
+import { AuthService } from './auth.service';
 
 export interface WatchlistItem {
   contentId: string;
@@ -36,21 +37,68 @@ export interface WatchlistStats {
   };
 }
 
+interface RawWatchlistStats {
+  total?: number;
+  want?: number;
+  watching?: number;
+  watched?: number;
+  byStatus?: {
+    want?: number;
+    watching?: number;
+    watched?: number;
+  };
+  byType?: {
+    movie?: number;
+    tv?: number;
+  };
+}
+
 @Injectable({
   providedIn: 'root',
 })
 export class WatchlistService {
   private api = inject(ApiService);
+  private authService = inject(AuthService);
   private endpoint = '/watchlist';
   private imageBaseUrl = 'https://image.tmdb.org/t/p/';
-  private storageKey = 'stream-watchlist';
-  private itemsSubject = new BehaviorSubject<WatchlistItem[]>(this.loadFromStorage());
+  private storageKeyPrefix = 'stream-watchlist';
+  private activeStorageKey = this.buildStorageKey();
+  private itemsSubject = new BehaviorSubject<WatchlistItem[]>(this.loadFromStorage(this.activeStorageKey));
   private hasTriedServerSync = false;
 
-  private loadFromStorage(): WatchlistItem[] {
+  constructor() {
+    effect(() => {
+      const storageKey = this.buildStorageKey();
+      const isInitialized = this.authService.isInitialized();
+      const hasActiveSession = this.authService.hasActiveSession();
+
+      if (storageKey !== this.activeStorageKey) {
+        this.activeStorageKey = storageKey;
+        this.hasTriedServerSync = false;
+        this.itemsSubject.next(this.loadFromStorage(this.activeStorageKey));
+      }
+
+      if (!isInitialized) {
+        return;
+      }
+
+      if (hasActiveSession) {
+        this.syncFromServer(true);
+        return;
+      }
+
+      this.hasTriedServerSync = false;
+    });
+  }
+
+  private buildStorageKey(): string {
+    return `${this.storageKeyPrefix}:${this.authService.watchlistStorageKey()}`;
+  }
+
+  private loadFromStorage(storageKey: string): WatchlistItem[] {
     if (typeof window === 'undefined') return [];
 
-    const raw = localStorage.getItem(this.storageKey);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return [];
 
     try {
@@ -64,7 +112,7 @@ export class WatchlistService {
 
   private saveToStorage(items: WatchlistItem[]): void {
     if (typeof window === 'undefined') return;
-    localStorage.setItem(this.storageKey, JSON.stringify(items));
+    localStorage.setItem(this.activeStorageKey, JSON.stringify(items));
   }
 
   private isValidWatchlistItem = (value: unknown): value is WatchlistItem => {
@@ -141,8 +189,12 @@ export class WatchlistService {
     };
   }
 
-  private syncFromServerOnce(): void {
-    if (this.hasTriedServerSync) return;
+  private syncFromServer(force = false): void {
+    if (!this.authService.isInitialized() || !this.authService.hasActiveSession()) {
+      return;
+    }
+
+    if (this.hasTriedServerSync && !force) return;
     this.hasTriedServerSync = true;
 
     this.api
@@ -151,8 +203,11 @@ export class WatchlistService {
         map((response) => response.watchlist.map((item) => this.normalizeIncomingItem(item))),
         catchError((error) => {
           if (this.shouldFallbackToLocal(error)) {
+            this.hasTriedServerSync = false;
             return of(this.itemsSubject.value);
           }
+
+          this.hasTriedServerSync = false;
           return throwError(() => error);
         }),
       )
@@ -175,7 +230,7 @@ export class WatchlistService {
     };
   }
 
-  private normalizeStats(stats: any): WatchlistStats {
+  private normalizeStats(stats: RawWatchlistStats | null | undefined): WatchlistStats {
     return {
       total: Number(stats?.total || 0),
       want: Number(stats?.want ?? stats?.byStatus?.want ?? 0),
@@ -201,7 +256,7 @@ export class WatchlistService {
   }
 
   getWatchlist(status?: string): Observable<WatchlistItem[]> {
-    this.syncFromServerOnce();
+    this.syncFromServer();
 
     return this.itemsSubject
       .asObservable()
@@ -281,7 +336,7 @@ export class WatchlistService {
   getStats(): Observable<WatchlistStats> {
     const localStats = this.buildStats(this.itemsSubject.value);
 
-    return this.api.get<{ stats: any }>(`${this.endpoint}/stats`).pipe(
+    return this.api.get<{ stats: RawWatchlistStats }>(`${this.endpoint}/stats`).pipe(
       map((response) => this.normalizeStats(response.stats)),
       catchError((error) => {
         if (!this.shouldFallbackToLocal(error)) {
