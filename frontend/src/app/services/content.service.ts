@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { Observable, map } from 'rxjs';
+import { Observable, map, shareReplay } from 'rxjs';
 import { ApiService } from './api.service';
 
 export interface ContentItem {
@@ -89,6 +89,12 @@ export interface TonightPickResponse {
   suggestion?: string;
 }
 
+interface ContentProvidersResponse {
+  providers: string[];
+  tmdbId: number;
+  type: 'movie' | 'tv';
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -96,6 +102,7 @@ export class ContentService {
   private api = inject(ApiService);
   private contentPath = '/content';
   private discoverPath = '/discover';
+  private providersCache = new Map<string, Observable<string[]>>();
 
   private buildProviderQuery(
     page: number,
@@ -333,6 +340,24 @@ export class ContentService {
           })),
         })),
       );
+  }
+
+  getWatchProviders(type: 'movie' | 'tv', id: number): Observable<string[]> {
+    const cacheKey = `${type}-${id}`;
+    const cached = this.providersCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const request = this.api
+      .get<ContentProvidersResponse>(`${this.contentPath}/${type}/${id}/providers`)
+      .pipe(
+        map((res) => res.providers || []),
+        shareReplay(1),
+      );
+
+    this.providersCache.set(cacheKey, request);
+    return request;
   }
 
   getVibes(): Observable<DiscoverVibesResponse> {
